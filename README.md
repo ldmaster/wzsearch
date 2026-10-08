@@ -145,6 +145,26 @@ O programa **não** copia, move nem envia mídia. Apenas referencia o nome do
 arquivo, o tipo e se ele existe no export. Testes usam fixtures sintéticas —
 nenhuma conversa real.
 
+## Baixar o executável (sem instalar Python)
+
+Os binários ficam nas **Releases** do repositório — baixáveis por qualquer pessoa,
+**sem login no GitHub**:
+
+- https://github.com/ldmaster/wzsearch/releases
+
+Baixe `wzsearch-windows.zip`, descompacte e pronto: `wzsearch.exe` + `wzsearch.bat`
++ `COMO-USAR.txt`. Para o usuário final, basta arrastar o export do WhatsApp sobre
+o `wzsearch.bat`.
+
+Para gerar uma nova release, crie e envie uma tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+O workflow compila os binários (Windows e Linux) e anexa os zips ao Release.
+
 ## Desenvolvimento
 
 ```bash
