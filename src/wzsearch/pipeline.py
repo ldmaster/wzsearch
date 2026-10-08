@@ -272,6 +272,71 @@ def _write(
     return written, skipped
 
 
+MODE_PHOTOS = "photos"
+MODE_SEARCH = "search"
+
+#: mode -> (columns, id column, human label)
+_MODES: dict[str, tuple[Sequence[str], str, str]] = {
+    MODE_PHOTOS: (PHOTO_COLUMNS, "foto_id", "foto(s)"),
+    MODE_SEARCH: (COLUMNS, "occurrence_id", "ocorrência(s)"),
+}
+
+
+def columns_for(mode: str) -> Sequence[str]:
+    """Column order for a mode (used by the GUI table)."""
+    return _MODES[mode][0]
+
+
+def _compile(
+    terms: Sequence[str], regexes: Sequence[str], *, ignore_case: bool
+) -> list[SearchTerm]:
+    try:
+        return build_terms(terms, regexes, ignore_case=ignore_case)
+    except ValueError as exc:
+        raise WzsearchError(str(exc), exit_code=2) from exc
+
+
+def collect_photos(
+    inputs: Sequence[Path],
+    *,
+    eu: str | None = None,
+    chat: str | None = None,
+    include_system: bool = False,
+) -> list[dict[str, object]]:
+    """Build the photo listing rows without writing anything."""
+    parsed = _load_all(inputs, eu=eu, chat=chat)
+    return list(_iter_photo_rows(parsed, include_system=include_system))
+
+
+def collect_search(
+    inputs: Sequence[Path],
+    terms: Sequence[str],
+    regexes: Sequence[str],
+    *,
+    ignore_case: bool = False,
+    eu: str | None = None,
+    chat: str | None = None,
+    include_system: bool = False,
+) -> list[dict[str, object]]:
+    """Build the occurrences rows without writing anything."""
+    compiled = _compile(terms, regexes, ignore_case=ignore_case)
+    parsed = _load_all(inputs, eu=eu, chat=chat)
+    return list(_iter_occurrence_rows(parsed, compiled, include_system=include_system))
+
+
+def save_rows(
+    rows: Sequence[dict[str, object]],
+    mode: str,
+    csv_path: Path | None,
+    *,
+    overwrite: bool = False,
+) -> GenerateResult:
+    """Write collected ``rows`` (incremental when the file exists)."""
+    columns, id_column, label = _MODES[mode]
+    written, skipped = _write(rows, columns, id_column, csv_path, overwrite=overwrite)
+    return GenerateResult(csv_path, label, written, skipped)
+
+
 def generate_photos(
     inputs: Sequence[Path],
     csv_path: Path | None,
@@ -281,11 +346,9 @@ def generate_photos(
     include_system: bool = False,
     overwrite: bool = False,
 ) -> GenerateResult:
-    """Generate the photo listing and return what was written."""
-    parsed = _load_all(inputs, eu=eu, chat=chat)
-    rows = list(_iter_photo_rows(parsed, include_system=include_system))
-    written, skipped = _write(rows, PHOTO_COLUMNS, "foto_id", csv_path, overwrite=overwrite)
-    return GenerateResult(csv_path, "foto(s)", written, skipped)
+    """Collect the photo listing and write it in one call (used by the CLI)."""
+    rows = collect_photos(inputs, eu=eu, chat=chat, include_system=include_system)
+    return save_rows(rows, MODE_PHOTOS, csv_path, overwrite=overwrite)
 
 
 def generate_search(
@@ -300,12 +363,14 @@ def generate_search(
     include_system: bool = False,
     overwrite: bool = False,
 ) -> GenerateResult:
-    """Generate the occurrences listing and return what was written."""
-    try:
-        compiled = build_terms(terms, regexes, ignore_case=ignore_case)
-    except ValueError as exc:
-        raise WzsearchError(str(exc), exit_code=2) from exc
-    parsed = _load_all(inputs, eu=eu, chat=chat)
-    rows = list(_iter_occurrence_rows(parsed, compiled, include_system=include_system))
-    written, skipped = _write(rows, COLUMNS, "occurrence_id", csv_path, overwrite=overwrite)
-    return GenerateResult(csv_path, "ocorrência(s)", written, skipped)
+    """Collect the occurrences and write them in one call (used by the CLI)."""
+    rows = collect_search(
+        inputs,
+        terms,
+        regexes,
+        ignore_case=ignore_case,
+        eu=eu,
+        chat=chat,
+        include_system=include_system,
+    )
+    return save_rows(rows, MODE_SEARCH, csv_path, overwrite=overwrite)

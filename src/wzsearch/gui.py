@@ -1,8 +1,9 @@
 """Tkinter desktop front-end so people can use wzsearch without a terminal.
 
-Drag the WhatsApp export onto the window (or click to pick it), choose the
-output file name and folder, and press *Gerar*. Generation runs on a worker
-thread so the window keeps responding while a progress bar is shown.
+Drag the WhatsApp export onto the window (or click to pick it), press *Gerar*
+and the rows appear in the *Resultados* tab, with photo preview, sender avatars
+and a *Salvar CSV* button. Generation runs on a worker thread so the window
+keeps responding while a progress bar is shown.
 """
 
 from __future__ import annotations
@@ -18,11 +19,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from .gui_analytics import AnalyticsView
+from .gui_results import ResultsView
 from .pipeline import (
-    GenerateResult,
+    MODE_PHOTOS,
+    MODE_SEARCH,
     WzsearchError,
-    generate_photos,
-    generate_search,
+    collect_photos,
+    collect_search,
+    save_rows,
 )
 
 try:  # optional: real drag-and-drop
@@ -32,8 +37,6 @@ except ImportError:  # pragma: no cover - the button still works without it
     TkinterDnD = None
 
 _EXPORT_TYPES = [("Export do WhatsApp", "*.zip *.txt"), ("Todos os arquivos", "*.*")]
-_PHOTO_MODE = "photos"
-_SEARCH_MODE = "search"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,26 +55,31 @@ class _Request:
 def default_output_name(source: Path, mode: str) -> str:
     """Suggest an output file name based on the export's name."""
     stem = source.stem or "conversa"
-    return f"{stem}_fotos.csv" if mode == _PHOTO_MODE else f"{stem}_ocorrencias.csv"
+    return f"{stem}_fotos.csv" if mode == MODE_PHOTOS else f"{stem}_ocorrencias.csv"
 
 
 def resolve_output_path(source: Path, name: str, dest: Path) -> Path:
     """Combine the destination folder with the (sanitised) output file name."""
-    filename = name.strip() or default_output_name(source, _PHOTO_MODE)
+    filename = name.strip() or default_output_name(source, MODE_PHOTOS)
     if not filename.lower().endswith(".csv"):
         filename += ".csv"
     return Path(dest) / filename
 
 
-def validate_inputs(source: Path | None, name: str, dest: Path | None) -> list[str]:
-    """Return human-readable problems with the chosen inputs (empty when fine)."""
-    errors: list[str] = []
+def validate_source(source: Path | None) -> list[str]:
+    """Return problems with the chosen export (empty when fine)."""
     if source is None:
-        errors.append("Escolha o arquivo exportado do WhatsApp (.zip ou .txt).")
-    elif not source.exists():
-        errors.append(f"Arquivo não encontrado: {source}")
-    elif source.suffix.lower() not in {".zip", ".txt"}:
-        errors.append("O arquivo precisa ser .zip ou .txt.")
+        return ["Escolha o arquivo exportado do WhatsApp (.zip ou .txt)."]
+    if not source.exists():
+        return [f"Arquivo não encontrado: {source}"]
+    if source.suffix.lower() not in {".zip", ".txt"}:
+        return ["O arquivo precisa ser .zip ou .txt."]
+    return []
+
+
+def validate_inputs(source: Path | None, name: str, dest: Path | None) -> list[str]:
+    """Return problems with the inputs for *saving* (empty when fine)."""
+    errors = validate_source(source)
     if not name.strip():
         errors.append("Digite o nome do arquivo de saída.")
     elif any(sep in name for sep in ("/", "\\")):
@@ -92,7 +100,7 @@ def _register_drop(widget: tk.Widget, callback: Callable[[str], None]) -> None:
 
 
 class _GeneratorPanel(ttk.Frame):
-    """Widgets for one tab (photo listing or term search)."""
+    """Widgets for one input tab (photo listing or term search)."""
 
     def __init__(
         self,
@@ -131,15 +139,20 @@ class _GeneratorPanel(ttk.Frame):
         self.source_label = ttk.Label(self, text="Nenhum arquivo escolhido", foreground="#666")
         self.source_label.pack(fill="x", pady=(6, 10))
 
-        self._row("Nome do arquivo de saída:", self.name_var)
-        self._dest_row()
-
-        if self.mode == _SEARCH_MODE:
+        if self.mode == MODE_SEARCH:
             self._row("Termos (separados por vírgula):", self.terms_var)
             self._row("Regex (opcional):", self.regex_var)
             ttk.Checkbutton(
                 self, text="Ignorar maiúsculas/minúsculas", variable=self.case_var
             ).pack(anchor="w", pady=(4, 0))
+        else:
+            ttk.Label(
+                self,
+                text="A saída (nome e pasta) é só o padrão sugerido ao salvar o CSV.",
+                foreground="#666",
+            ).pack(anchor="w", pady=(4, 0))
+        self._row("Nome do arquivo de saída:", self.name_var)
+        self._dest_row()
 
         self.generate_button = ttk.Button(self, text="Gerar", command=self._generate)
         self.generate_button.pack(pady=(12, 0))
@@ -147,13 +160,13 @@ class _GeneratorPanel(ttk.Frame):
     def _row(self, label: str, variable: tk.StringVar) -> None:
         frame = ttk.Frame(self)
         frame.pack(fill="x", pady=(4, 0))
-        ttk.Label(frame, text=label, width=30).pack(side="left")
+        ttk.Label(frame, text=label, width=32).pack(side="left")
         ttk.Entry(frame, textvariable=variable).pack(side="left", fill="x", expand=True)
 
     def _dest_row(self) -> None:
         frame = ttk.Frame(self)
         frame.pack(fill="x", pady=(4, 0))
-        ttk.Label(frame, text="Pasta de destino:", width=30).pack(side="left")
+        ttk.Label(frame, text="Pasta de destino:", width=32).pack(side="left")
         ttk.Entry(frame, textvariable=self.dest_var).pack(side="left", fill="x", expand=True)
         ttk.Button(frame, text="Escolher…", command=self._choose_dest).pack(
             side="left", padx=(6, 0)
@@ -207,21 +220,29 @@ class WzsearchApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("wzsearch — fotos e buscas do WhatsApp")
-        self.root.minsize(620, 500)
+        self.root.minsize(760, 560)
         self._queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._panels: list[_GeneratorPanel] = []
-        self._last_output: Path | None = None
+        self._request: _Request | None = None
+        self._rows: list[dict[str, object]] = []
+        self._mode = MODE_PHOTOS
+        self._source: Path | None = None
         self._build()
 
     def _build(self) -> None:
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill="both", expand=True, padx=10, pady=10)
-        for mode, title in ((_PHOTO_MODE, "Fotos"), (_SEARCH_MODE, "Buscar termo")):
-            panel = _GeneratorPanel(notebook, mode=mode, on_generate=self._start)
-            notebook.add(panel, text=title)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+        for mode, title in ((MODE_PHOTOS, "Fotos"), (MODE_SEARCH, "Buscar termo")):
+            panel = _GeneratorPanel(self.notebook, mode=mode, on_generate=self._start)
+            self.notebook.add(panel, text=title)
             self._panels.append(panel)
 
-        bottom = ttk.Frame(self.root, padding=(10, 0, 10, 10))
+        self.results = ResultsView(self.notebook, on_save=self._save, on_status=self._set_status)
+        self.notebook.add(self.results, text="Resultados")
+        self.analytics = AnalyticsView(self.notebook)
+        self.notebook.add(self.analytics, text="Análises")
+
+        bottom = ttk.Frame(self.root, padding=(10, 6, 10, 10))
         bottom.pack(fill="x")
         self.progress = ttk.Progressbar(bottom, mode="indeterminate", length=140)
         self.progress.pack(side="left")
@@ -233,35 +254,34 @@ class WzsearchApp:
         self.open_button.pack(side="right")
 
     def _start(self, request: _Request) -> None:
-        errors = validate_inputs(request.source, request.output_name, request.dest)
-        if request.mode == _SEARCH_MODE and not request.terms and not request.regexes:
+        errors = validate_source(request.source)
+        if request.mode == MODE_SEARCH and not request.terms and not request.regexes:
             errors.append("Informe pelo menos um termo ou um regex.")
         if errors or request.source is None:
             self._set_status(" ".join(errors) or "Escolha o arquivo exportado.", ok=False)
             return
 
-        output = resolve_output_path(request.source, request.output_name, request.dest)
+        self._request = request
         self._set_busy(True)
-        self._set_status("Lendo a conversa e gerando o CSV…")
-        threading.Thread(target=self._worker, args=(request, output), daemon=True).start()
+        self._set_status("Lendo a conversa…")
+        threading.Thread(target=self._worker, args=(request,), daemon=True).start()
         self.root.after(100, self._poll)
 
-    def _worker(self, request: _Request, output: Path) -> None:
+    def _worker(self, request: _Request) -> None:
         source = request.source
         if source is None:
             return
         try:
-            if request.mode == _PHOTO_MODE:
-                result = generate_photos([source], output)
+            if request.mode == MODE_PHOTOS:
+                rows = collect_photos([source])
             else:
-                result = generate_search(
+                rows = collect_search(
                     [source],
                     request.terms,
                     request.regexes,
-                    output,
                     ignore_case=request.ignore_case,
                 )
-            self._queue.put(("ok", result))
+            self._queue.put(("rows", (rows, request.mode, source)))
         except WzsearchError as exc:
             self._queue.put(("error", str(exc)))
         except Exception as exc:  # surface any unexpected failure to the user
@@ -274,14 +294,50 @@ class WzsearchApp:
             self.root.after(100, self._poll)
             return
         self._set_busy(False)
-        if kind == "ok" and isinstance(payload, GenerateResult):
-            self._last_output = payload.output
-            what = "fotos" if "foto" in payload.label else "ocorrências"
-            extra = f" ({payload.skipped} já existiam)" if payload.skipped else ""
-            self._set_status(f"{payload.added} {what} → {payload.output}{extra}", ok=True)
-            self.open_button.configure(state="normal")
+        if kind == "rows" and isinstance(payload, tuple):
+            rows, mode, source = payload
+            self._present(rows, mode, source)
         else:
             self._set_status(str(payload), ok=False)
+
+    def _present(self, rows: list[dict[str, object]], mode: str, source: Path) -> None:
+        self._rows = rows
+        self._mode = mode
+        self._source = source
+        self.results.show(rows, mode=mode, source=source)
+        self.analytics.show(rows)
+        self.notebook.select(self.results)  # type: ignore[no-untyped-call]
+        what = "foto(s)" if mode == MODE_PHOTOS else "ocorrência(s)"
+        pending = " · veja a aba Análises" if mode == MODE_PHOTOS else ""
+        self._set_status(f"{len(rows)} {what} geradas{pending}", ok=True)
+
+    def _save(self) -> None:
+        if not self._rows:
+            self._set_status("Gere uma lista antes de salvar.", ok=False)
+            return
+        request = self._request
+        default_dir = str(request.dest) if request is not None else str(Path.home())
+        default_name = (
+            request.output_name
+            if request is not None and request.output_name
+            else default_output_name(self._source or Path("conversa"), self._mode)
+        )
+        chosen = filedialog.asksaveasfilename(
+            title="Salvar CSV",
+            defaultextension=".csv",
+            initialfile=default_name,
+            initialdir=default_dir,
+            filetypes=[("CSV", "*.csv")],
+        )
+        if not chosen:
+            return
+        try:
+            result = save_rows(self._rows, self._mode, Path(chosen))
+        except WzsearchError as exc:
+            self._set_status(str(exc), ok=False)
+            return
+        extra = f" ({result.skipped} já existiam)" if result.skipped else ""
+        self._set_status(f"{result.added} linha(s) salva(s) em {chosen}{extra}", ok=True)
 
     def _set_busy(self, busy: bool) -> None:
         if busy:
@@ -295,9 +351,10 @@ class WzsearchApp:
         self.status.configure(text=message, foreground="#1a7f37" if ok else "#c0392b")
 
     def _open_folder(self) -> None:
-        if self._last_output is None:
+        target = self._source
+        if target is None:
             return
-        folder = str(self._last_output.parent)
+        folder = str(target.parent)
         if sys.platform.startswith("win"):
             os.startfile(folder)  # type: ignore[attr-defined]
         elif sys.platform == "darwin":

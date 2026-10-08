@@ -174,15 +174,29 @@ se o Gatekeeper reclamar, use `xattr -d com.apple.quarantine wzsearch`.
 
 ## Tela gráfica (GUI)
 
-Duas abas (**Fotos** e **Buscar termo**) com a mesma base do CLI:
+Quatro abas:
 
-- **área de arrastar-e-soltar** o export (`.zip`/`.txt`) — ou clique para escolher;
-- **nome do arquivo de saída** (sugerido a partir do export) e **pasta de destino**;
-- botão **Gerar** com **barra de progresso** e mensagem de status;
-- botão **Abrir pasta** ao terminar.
+- **Fotos** e **Buscar termo** — arraste o export (`.zip`/`.txt`); na busca, informe
+  termos/regex. Botão **Gerar** com barra de progresso.
+- **Resultados** — as linhas numa tabela, **sem gravar arquivo por padrão**, com
+  filtros (remetente, período, só pendentes), **prévia da foto**, **visualizador**
+  (duplo clique) e **avatares**. O botão **Salvar CSV…** grava quando você quiser
+  (incremental: salvar 2× não duplica).
+- **Análises** — frequência de postagem: quem mais postou, fotos por dia/mês/hora/
+  dia da semana, dias mais movimentados, mais/menos ativa, média por dia ativo,
+  intervalo médio entre fotos e maior sequência de dias seguidos.
 
-A geração roda numa thread separada, então a janela não congela. O arquivo é
-gravado de forma incremental (reler o mesmo export não duplica linhas).
+As fotos são lidas **do zip direto para a memória** (nada é extraído para o disco).
+
+### Avatares (foto do remetente)
+
+O export do WhatsApp **não** traz a foto de perfil dos contatos, e as rotas que
+teriam isso (automação do WhatsApp Web, `msgstore.db`) são não-oficiais e estão
+fora do escopo do projeto. Então o app oferece:
+
+- **avatar de iniciais** gerado (bolinha colorida com as iniciais), sempre; e
+- **foto real que você anexa** em *Definir foto do contato…*, guardada em
+  `~/.wzsearch/avatars.json` (dá para mudar a pasta com a variável `WZSEARCH_HOME`).
 
 Rodar localmente:
 

@@ -102,3 +102,24 @@ def _find_chat_member(names: list[str]) -> str | None:
         if name.lower().endswith(".txt"):
             return name
     return None
+
+
+def read_media_bytes(source: Path, filename: str) -> bytes | None:
+    """Return the bytes of one media file inside a ``.zip`` export.
+
+    Returns ``None`` for ``.txt`` exports, missing files, or unreadable zips, so
+    the caller decides what to show. Nothing is written to disk.
+    """
+    if source.suffix.lower() != ".zip" or not filename:
+        return None
+    target = normalize_media_name(filename)
+    try:
+        with zipfile.ZipFile(source) as archive:
+            for name in archive.namelist():
+                if name.endswith("/"):
+                    continue
+                if normalize_media_name(Path(name).name) == target:
+                    return archive.read(name)
+    except (OSError, zipfile.BadZipFile):
+        return None
+    return None

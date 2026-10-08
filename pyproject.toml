@@ -13,7 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
-gui = ["tkinterdnd2>=0.3"]
+gui = ["tkinterdnd2>=0.3", "Pillow>=10"]
 
 [project.scripts]
 wzsearch = "wzsearch.cli:main"
@@ -28,7 +28,7 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PTH", "D", "ANN"]
-ignore = ["D203", "D213", "D105", "D107"]
+ignore = ["D203", "D213", "D105", "D107", "ANN401"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -49,6 +49,10 @@ disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]
 module = ["tkinterdnd2", "tkinterdnd2.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["PIL", "PIL.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

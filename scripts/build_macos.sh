@@ -11,7 +11,9 @@ PYINSTALLER="$VENV/bin/pyinstaller"
 
 echo "==> Ambiente em $VENV (Python gerenciado pelo uv, com Tkinter)"
 uv python install 3.12
-uv venv --python-preference only-managed --python 3.12 "$VENV"
+if [ ! -x "$VENV/bin/python" ]; then
+    uv venv --python-preference only-managed --python 3.12 "$VENV"
+fi
 uv pip install --python "$VENV/bin/python" -e ".[gui]" "pyinstaller>=6.6,<7"
 
 echo "==> Compilando binários"

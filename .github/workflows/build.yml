@@ -39,9 +39,9 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install "pyinstaller>=6.6,<7"
-      - name: Install GUI dependency (Windows)
+      - name: Install GUI dependencies (Windows)
         if: runner.os == 'Windows'
-        run: python -m pip install tkinterdnd2
+        run: python -m pip install -e ".[gui]"
       - name: Build CLI
         run: pyinstaller --onefile --name wzsearch --paths src packaging/wzsearch_entry.py
       - name: Build GUI (Windows)
