@@ -306,12 +306,18 @@ class WzsearchApp:
             subprocess.Popen(["xdg-open", folder])
 
 
+def _safe_stderr(message: str) -> None:
+    """Write to stderr when a console is attached (windowed builds have none)."""
+    if sys.stderr is not None:
+        print(message, file=sys.stderr)
+
+
 def main() -> int:
     """Start the graphical interface and return an exit code."""
     try:
         root = TkinterDnD.Tk() if TkinterDnD is not None else tk.Tk()
     except tk.TclError as exc:
-        print(f"não foi possível abrir a interface gráfica: {exc}", file=sys.stderr)
+        _safe_stderr(f"não foi possível abrir a interface gráfica: {exc}")
         return 1
 
     def _report(_exc_type: type[BaseException], exc: BaseException, _tb: object) -> None:

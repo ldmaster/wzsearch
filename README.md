@@ -195,6 +195,51 @@ uv pip install --python .venv/bin/python -e ".[gui]"
 > **somente com a biblioteca padrão**. Sem `tkinterdnd2` a tela ainda funciona
 > (o clique para escolher o arquivo continua).
 
+## Build local (macOS)
+
+O Python do Homebrew **não** inclui Tkinter (a GUI precisa dele), então o build
+local usa um Python gerenciado pelo `uv`, que já traz Tkinter:
+
+```bash
+cd /Users/lucasdavi/IA/wzsearch
+./scripts/build_macos.sh
+```
+
+Isso gera:
+
+- `dist/wzsearch-gui.app` — a tela. Abra com: `open dist/wzsearch-gui.app`
+- `dist/wzsearch` — a CLI. Ex.:
+  `./dist/wzsearch --photos --csv fotos.csv "/caminho/export.zip"`
+
+O script é equivalente a (caso queira rodar à mão):
+
+```bash
+cd /Users/lucasdavi/IA/wzsearch
+uv python install 3.12
+uv venv --python-preference only-managed --python 3.12 .venv-mac
+uv pip install --python .venv-mac/bin/python -e ".[gui]" "pyinstaller>=6.6,<7"
+.venv-mac/bin/pyinstaller --onefile --name wzsearch --paths src packaging/wzsearch_entry.py
+.venv-mac/bin/pyinstaller --windowed --name wzsearch-gui --paths src \
+    --collect-all tkinterdnd2 packaging/wzsearch_gui_entry.py
+open dist/wzsearch-gui.app
+```
+
+Sem build, direto do código (testar mais rápido):
+
+```bash
+.venv-mac/bin/python -m wzsearch.gui
+```
+
+Observações:
+
+- Os binários gerados rodam só na **arquitetura desta máquina** (arm64). Para
+  Apple Intel, gere num Mac Intel (ou via CI com `macos-13`).
+- Binários copiados/baixados levam a marca de quarentena do Gatekeeper; se
+  reclamar, rode `xattr -d com.apple.quarantine dist/wzsearch-gui.app`.
+- Alternativa ao `uv`: `brew install python-tk@3.12` instala o Tkinter no Python
+  do Homebrew e o `.venv` normal passa a rodar a GUI.
+
+
 
 ## Desenvolvimento
 
