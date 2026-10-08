@@ -152,18 +152,49 @@ Os binários ficam nas **Releases** do repositório — baixáveis por qualquer 
 
 - https://github.com/ldmaster/wzsearch/releases
 
-Baixe `wzsearch-windows.zip`, descompacte e pronto: `wzsearch.exe` + `wzsearch.bat`
-+ `COMO-USAR.txt`. Para o usuário final, basta arrastar o export do WhatsApp sobre
-o `wzsearch.bat`.
+Baixe `wzsearch-windows.zip` e descompacte. Dentro dele:
+
+- **`wzsearch-gui.exe`** — a **tela gráfica** (recomendado para o usuário final):
+  duplo clique, arraste o export, escolha o nome/pasta e clique em *Gerar*.
+- `wzsearch.exe` — a versão de linha de comando.
+- `wzsearch.bat` — atalho: arraste o export em cima dele.
+- `COMO-USAR.txt` — instruções em linguagem simples.
 
 Para gerar uma nova release, crie e envie uma tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
-O workflow compila os binários (Windows e Linux) e anexa os zips ao Release.
+O workflow compila os binários, empacota e anexa os zips ao Release. O binário do
+macOS é *best-effort*: os runners arm64 do GitHub são limitados por capacidade e o
+job pode nem iniciar (sem quebrar a release). No macOS, o binário não é assinado —
+se o Gatekeeper reclamar, use `xattr -d com.apple.quarantine wzsearch`.
+
+## Tela gráfica (GUI)
+
+Duas abas (**Fotos** e **Buscar termo**) com a mesma base do CLI:
+
+- **área de arrastar-e-soltar** o export (`.zip`/`.txt`) — ou clique para escolher;
+- **nome do arquivo de saída** (sugerido a partir do export) e **pasta de destino**;
+- botão **Gerar** com **barra de progresso** e mensagem de status;
+- botão **Abrir pasta** ao terminar.
+
+A geração roda numa thread separada, então a janela não congela. O arquivo é
+gravado de forma incremental (reler o mesmo export não duplica linhas).
+
+Rodar localmente:
+
+```bash
+uv pip install --python .venv/bin/python -e ".[gui]"
+.venv/bin/python -m wzsearch.gui
+```
+
+> A GUI usa `tkinterdnd2` para o arrastar-e-soltar; o núcleo e o CLI seguem
+> **somente com a biblioteca padrão**. Sem `tkinterdnd2` a tela ainda funciona
+> (o clique para escolher o arquivo continua).
+
 
 ## Desenvolvimento
 
