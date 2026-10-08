@@ -94,13 +94,11 @@ class ResultsView(ttk.Frame):
 
     def _build_side(self, master: tk.Misc) -> ttk.Frame:
         side = ttk.Frame(master, padding=8)
-        self.avatar_label = tk.Label(side, width=_AVATAR_BOX, height=_AVATAR_BOX)
+        self.avatar_label = tk.Label(side)
         self.avatar_label.pack(anchor="w")
         self.sender_label = ttk.Label(side, text="—", font=("TkDefaultFont", 11, "bold"))
         self.sender_label.pack(anchor="w", pady=(4, 6))
-        self.photo_label = tk.Label(
-            side, text="(sem foto)", background="#f2f2f2", width=34, height=10
-        )
+        self.photo_label = tk.Label(side, text="(sem foto)", background="#f2f2f2")
         self.photo_label.pack(fill="x")
         buttons = ttk.Frame(side)
         buttons.pack(fill="x", pady=6)
@@ -175,27 +173,25 @@ class ResultsView(ttk.Frame):
             return
         sender = self._sender(row)
         self.sender_label.configure(text=sender or "(sem remetente)")
-        self._avatar_img = self._render(
-            self.avatar_label, images.sender_avatar(sender, _AVATAR_BOX)
-        )
+        avatar = images.sender_avatar(sender, _AVATAR_BOX)
+        self._avatar_img = self._render(self.avatar_label, avatar, "")
         filename = str(row.get("foto_arquivo", "") or "")
         image = None
         if filename and self._source is not None:
             image = images.load_photo(self._source, filename, _PREVIEW_BOX)
-        self._photo_img = self._render(self.photo_label, image)
-        if image is None:
-            self.photo_label.configure(
-                text="(sem foto)" + ("" if filename else " — mídia pendente")
-            )
+        missing = "(mídia pendente — o arquivo não está no export)"
+        broken = "(não foi possível abrir esta imagem)"
+        fallback = missing if not filename else broken
+        self._photo_img = self._render(self.photo_label, image, fallback)
         lines = "\n".join(f"{key}: {value}" for key, value in row.items())
         self.details.configure(state="normal")
         self.details.delete("1.0", "end")
         self.details.insert("1.0", lines)
         self.details.configure(state="disabled")
 
-    def _render(self, widget: tk.Label, image: Any) -> Any:
+    def _render(self, widget: tk.Label, image: Any, fallback: str) -> Any:
         if image is None:
-            widget.configure(image="", text=widget.cget("text"))
+            widget.configure(image="", text=fallback)
             return None
         photo = images.to_photoimage(image)
         widget.configure(image=photo, text="")

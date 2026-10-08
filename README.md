@@ -182,9 +182,13 @@ Quatro abas:
   filtros (remetente, período, só pendentes), **prévia da foto**, **visualizador**
   (duplo clique) e **avatares**. O botão **Salvar CSV…** grava quando você quiser
   (incremental: salvar 2× não duplica).
-- **Análises** — frequência de postagem: quem mais postou, fotos por dia/mês/hora/
-  dia da semana, dias mais movimentados, mais/menos ativa, média por dia ativo,
-  intervalo médio entre fotos e maior sequência de dias seguidos.
+- **Análises** — frequência de postagem: total/mídias pendentes, período, **tabela por
+  remetente** (fotos, %, com arquivo, pendentes, dias ativos, 1ª e última foto),
+  **mapa de calor dia da semana × hora** ("quando postam"), picos (hora/dia/mês mais
+  ativos), **palavras mais usadas nas legendas**, **tipos de arquivo**, fotos por
+  dia/mês/hora/dia da semana, dias mais movimentados, concentração (top 3),
+  mais/menos ativa, média e mediana por dia ativo, intervalo médio/mediano entre
+  fotos e maior sequência de dias seguidos.
 
 As fotos são lidas **do zip direto para a memória** (nada é extraído para o disco).
 Formatos de imagem: `jpg`, `png`, `webp`, `gif` e **`heic`/`heif`** (fotos de iPhone,

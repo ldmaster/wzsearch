@@ -1,6 +1,6 @@
 from typing import Any
 
-from wzsearch.analytics import filter_rows, photo_stats
+from wzsearch.analytics import caption_words, filter_rows, photo_stats, sender_details
 
 ROWS: list[dict[str, Any]] = [
     {
@@ -95,3 +95,37 @@ def test_filter_rows() -> None:
     assert len(filter_rows(ROWS, start="2024-03-02")) == 2
     assert len(filter_rows(ROWS, end="2024-03-02")) == 3
     assert len(filter_rows(ROWS, sender="Bruno", only_pending=True)) == 1
+
+
+def test_peak_concentration_and_grid() -> None:
+    stats = photo_stats(ROWS)
+    assert stats.peak_weekday == 4  # 2024-03-01 é sexta
+    assert stats.peak_month == "2024-03"
+    assert stats.top3_share == 1.0
+    assert stats.with_caption == 0
+    assert stats.extensions == (("(sem arquivo)", 4),)
+    assert len(stats.per_weekday_hour) == 7
+    assert sum(sum(row) for row in stats.per_weekday_hour) == 4
+
+
+def test_sender_details() -> None:
+    details = {detail.sender: detail for detail in sender_details(ROWS)}
+    assert details["Ana"].count == 3
+    assert details["Ana"].active_days == 2
+    assert details["Ana"].first == "2024-03-01"
+    assert details["Ana"].last == "2024-04-10"
+    assert details["Bruno"].pending == 1
+    assert details["Bruno"].with_file == 0
+
+
+def test_caption_words() -> None:
+    rows = [
+        {"legenda": "olha o bolo de chocolate"},
+        {"legenda": "o bolo ficou bom kkk"},
+        {"legenda": "chocolate"},
+    ]
+    words = dict(caption_words(rows))
+    assert words["bolo"] == 2
+    assert words["chocolate"] == 2
+    assert "o" not in words
+    assert "kkk" not in words
