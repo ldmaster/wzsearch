@@ -117,6 +117,14 @@ def load_photo(source: Path, filename: str, box: int) -> Any:
     return thumbnail(image, box) if image is not None else None
 
 
+def image_from_bytes(data: bytes | None, box: int) -> Any:
+    """Decode stored image bytes into a thumbnail, or ``None``."""
+    if data is None:
+        return None
+    image = open_image(data)
+    return thumbnail(image, box) if image is not None else None
+
+
 def load_image_file(path: Path, box: int) -> Any:
     """Load a thumbnail from a file on disk (used for user-chosen avatars)."""
     try:

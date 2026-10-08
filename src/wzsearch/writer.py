@@ -52,6 +52,27 @@ class CsvSchemaError(ValueError):
     """Raised when an existing CSV has a different column layout."""
 
 
+#: Columns used when exporting stored rows (the database view) to CSV.
+DB_COLUMNS = (
+    "id",
+    "remetente",
+    "telefone_remetente",
+    "data",
+    "hora",
+    "timestamp",
+    "chat",
+    "message_id",
+    "legenda",
+    "contexto",
+    "contexto_provavel",
+    "foto_arquivo",
+    "foto_existe",
+    "midia_pendente",
+    "status",
+    "incluir",
+)
+
+
 def row_key(row: Mapping[str, object], columns: Sequence[str], id_column: str) -> tuple[str, ...]:
     """Return the stable identity of a row: every column except the sequential id."""
     return tuple(str(row.get(column, "")) for column in columns if column != id_column)

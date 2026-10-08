@@ -13,12 +13,14 @@ from dataclasses import dataclass
 from itertools import count
 from pathlib import Path
 
-from .loader import load_export
+from .loader import load_export, read_media_bytes
 from .media import is_photo, strip_media_placeholders
 from .models import Message
 from .numbers import extract_numbers, format_numbers, sender_phone
 from .parser import parse_chat
 from .search import SearchTerm, build_terms
+from .store import Store
+from .store import row_key as store_row_key
 from .writer import (
     COLUMNS,
     PHOTO_COLUMNS,
@@ -374,3 +376,46 @@ def generate_search(
         include_system=include_system,
     )
     return save_rows(rows, MODE_SEARCH, csv_path, overwrite=overwrite)
+
+
+@dataclass(frozen=True, slots=True)
+class ImportResult:
+    """Outcome of importing a photo listing into the store."""
+
+    added: int
+    skipped: int
+    label: str = "foto(s)"
+
+
+def import_photos(
+    inputs: Sequence[Path],
+    store: Store,
+    *,
+    eu: str | None = None,
+    chat: str | None = None,
+    include_system: bool = False,
+    store_media: bool = True,
+) -> ImportResult:
+    """Import the photo listing into ``store`` (embedding media when asked).
+
+    Media bytes are read from the export; records already present (same key)
+    are ignored, so importing the same export twice adds nothing.
+    """
+    rows = collect_photos(inputs, eu=eu, chat=chat, include_system=include_system)
+    media: dict[str, bytes] = {}
+    if store_media:
+        by_name = {path.name: path for path in inputs}
+        for row in rows:
+            source_name, separator, filename = str(row.get("foto_evidencia", "") or "").partition(
+                "::"
+            )
+            if not separator:
+                continue
+            source_path = by_name.get(source_name)
+            if source_path is None:
+                continue
+            data = read_media_bytes(source_path, filename)
+            if data is not None:
+                media[store_row_key(row)] = data
+    added = store.add_rows(rows, media=media)
+    return ImportResult(added=added, skipped=len(rows) - added)

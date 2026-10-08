@@ -1,22 +1,35 @@
-"""Results tab: the generated rows in a table, with photo preview and avatars."""
+"""Results and trash tabs: stored rows in a table, with preview and avatars."""
 
 from __future__ import annotations
 
 import tkinter as tk
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from tkinter import filedialog, ttk
-from typing import Any, Protocol
+from tkinter import filedialog, messagebox, ttk
+from typing import Any, Literal, Protocol
 
 from . import avatars, images
 from .analytics import filter_rows
-from .pipeline import columns_for
+from .store import Store
 
-_MAX_COLUMN_WIDTH = 200
 _PREVIEW_BOX = 260
 _AVATAR_BOX = 44
 _VIEWER_BOX = 900
 _ALL_SENDERS = "(todos)"
+
+#: (column key, heading, width, anchor)
+_DISPLAY_COLUMNS: tuple[tuple[str, str, int, Literal["w", "center"]], ...] = (
+    ("incluido", "Incluído", 70, "center"),
+    ("remetente", "Remetente", 150, "w"),
+    ("telefone_remetente", "Telefone", 130, "w"),
+    ("data", "Data", 90, "w"),
+    ("hora", "Hora", 70, "w"),
+    ("legenda", "Legenda", 220, "w"),
+    ("contexto_provavel", "Contexto provável", 200, "w"),
+    ("foto_arquivo", "Arquivo", 200, "w"),
+    ("foto_existe", "Tem arquivo", 80, "center"),
+    ("midia_pendente", "Pendente", 70, "center"),
+)
 
 
 class StatusSink(Protocol):
@@ -26,70 +39,90 @@ class StatusSink(Protocol):
         """Show ``message``; ``ok=False`` marks it as an error."""
 
 
+def _cell(row: Mapping[str, Any], column: str) -> str:
+    if column == "incluido":
+        return "☑" if row.get("incluir") else "☐"
+    return str(row.get(column, "") or "")
+
+
 class ResultsView(ttk.Frame):
-    """Table of rows plus a side panel with the photo and sender avatar."""
+    """Table of stored rows: preview, avatars, include toggle, delete and save."""
 
     def __init__(
         self,
         master: tk.Misc,
         *,
-        on_save: Callable[[], None],
+        store: Store,
         on_status: StatusSink,
+        on_changed: Callable[[], None],
+        on_save: Callable[[], None],
     ) -> None:
         super().__init__(master, padding=8)
-        self._on_save = on_save
+        self._store = store
         self._on_status = on_status
-        self._rows: list[dict[str, object]] = []
-        self._mode = "photos"
-        self._source: Path | None = None
-        self._photo_img: Any = None
-        self._avatar_img: Any = None
-        self._viewer_img: Any = None
+        self._on_changed = on_changed
+        self._on_save = on_save
+        self._rows: list[Mapping[str, Any]] = []
+        self._by_iid: dict[str, Mapping[str, Any]] = {}
+        self._db_backed = False
+        self._image: Any = None
+        self._avatar: Any = None
+        self._viewer: Any = None
         self._build()
 
     # -- construction -----------------------------------------------------
     def _build(self) -> None:
         toolbar = ttk.Frame(self)
         toolbar.pack(fill="x")
-        ttk.Button(toolbar, text="Salvar CSV…", command=self._on_save).pack(side="left")
+        ttk.Button(toolbar, text="Incluir/Excluir da análise (Espaço)", command=self._toggle).pack(
+            side="left"
+        )
+        ttk.Button(toolbar, text="Excluir (lixeira)", command=self._delete).pack(
+            side="left", padx=4
+        )
+        ttk.Button(toolbar, text="Salvar CSV…", command=self._on_save).pack(side="left", padx=4)
         self.count_label = ttk.Label(toolbar, text="sem dados")
         self.count_label.pack(side="left", padx=10)
 
-        ttk.Label(toolbar, text="Remetente:").pack(side="left", padx=(10, 2))
+        filters = ttk.Frame(self)
+        filters.pack(fill="x", pady=(4, 0))
+        ttk.Label(filters, text="Remetente:").pack(side="left")
         self.sender_var = tk.StringVar(value=_ALL_SENDERS)
         self.sender_box = ttk.Combobox(
-            toolbar, textvariable=self.sender_var, width=18, state="readonly"
+            filters, textvariable=self.sender_var, width=18, state="readonly"
         )
-        self.sender_box.pack(side="left")
+        self.sender_box.pack(side="left", padx=(2, 8))
         self.sender_box.bind("<<ComboboxSelected>>", lambda _event: self._apply_filters())
-
-        ttk.Label(toolbar, text="De:").pack(side="left", padx=(10, 2))
+        ttk.Label(filters, text="De:").pack(side="left")
         self.start_var = tk.StringVar()
-        ttk.Entry(toolbar, textvariable=self.start_var, width=11).pack(side="left")
-        ttk.Label(toolbar, text="até:").pack(side="left", padx=(4, 2))
+        ttk.Entry(filters, textvariable=self.start_var, width=11).pack(side="left")
+        ttk.Label(filters, text="até:").pack(side="left", padx=(4, 2))
         self.end_var = tk.StringVar()
-        ttk.Entry(toolbar, textvariable=self.end_var, width=11).pack(side="left")
+        ttk.Entry(filters, textvariable=self.end_var, width=11).pack(side="left")
         self.pending_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            toolbar, text="só pendentes", variable=self.pending_var, command=self._apply_filters
+            filters, text="só pendentes", variable=self.pending_var, command=self._apply_filters
         ).pack(side="left", padx=8)
-        ttk.Button(toolbar, text="Filtrar", command=self._apply_filters).pack(side="left")
+        ttk.Button(filters, text="Filtrar", command=self._apply_filters).pack(side="left")
 
         panes = ttk.Panedwindow(self, orient="horizontal")
         panes.pack(fill="both", expand=True, pady=(8, 0))
-
-        table_frame = ttk.Frame(panes)
-        self.tree = ttk.Treeview(table_frame, show="headings", selectmode="browse")
-        yscroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
-        xscroll = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
+        table = ttk.Frame(panes)
+        self.tree = ttk.Treeview(table, show="headings", selectmode="extended")
+        yscroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
+        xscroll = ttk.Scrollbar(table, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+        self.tree.configure(columns=[column for column, _, _, _ in _DISPLAY_COLUMNS])
+        for column, title, width, anchor in _DISPLAY_COLUMNS:
+            self.tree.heading(column, text=title)
+            self.tree.column(column, width=width, anchor=anchor, stretch=False)
         self.tree.pack(side="top", fill="both", expand=True)
-        yscroll.place(relx=1.0, rely=0, relheight=0.95, anchor="ne")
+        yscroll.pack(side="right", fill="y")
         xscroll.pack(side="bottom", fill="x")
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._show_preview())
         self.tree.bind("<Double-1>", lambda _event: self._open_viewer())
-        panes.add(table_frame, weight=3)
-
+        self.tree.bind("<space>", self._on_space)
+        panes.add(table, weight=3)
         panes.add(self._build_side(panes), weight=1)
 
     def _build_side(self, master: tk.Misc) -> ttk.Frame:
@@ -114,28 +147,21 @@ class ResultsView(ttk.Frame):
         return side
 
     # -- data -------------------------------------------------------------
-    def show(self, rows: Sequence[dict[str, object]], *, mode: str, source: Path | None) -> None:
-        """Load new rows into the table."""
+    def show(self, rows: Sequence[Mapping[str, Any]]) -> None:
+        """Load rows into the table (stored rows carry ``id``)."""
         self._rows = list(rows)
-        self._mode = mode
-        self._source = source
-        columns = list(columns_for(mode))
-        self.tree.configure(columns=columns)
-        for column in columns:
-            self.tree.heading(column, text=column)
-            width = 90 if column in {"data", "hora", "message_id"} else _MAX_COLUMN_WIDTH
-            self.tree.column(column, width=width, stretch=False, anchor="w")
+        self._db_backed = bool(self._rows) and "id" in self._rows[0]
         senders = sorted(
             {str(row.get("remetente", "")) for row in self._rows if row.get("remetente")}
         )
         self.sender_box.configure(values=[_ALL_SENDERS, *senders])
-        self.sender_var.set(_ALL_SENDERS)
-        self.start_var.set("")
-        self.end_var.set("")
-        self.pending_var.set(False)
         self._apply_filters()
 
-    def _visible_rows(self) -> list[Mapping[str, object]]:
+    def exportable(self) -> list[Mapping[str, Any]]:
+        """Rows currently visible (used by Salvar CSV)."""
+        return self._visible_rows()
+
+    def _visible_rows(self) -> list[Mapping[str, Any]]:
         sender = self.sender_var.get()
         return filter_rows(
             self._rows,
@@ -148,24 +174,62 @@ class ResultsView(ttk.Frame):
     def _apply_filters(self) -> None:
         visible = self._visible_rows()
         self.tree.delete(*self.tree.get_children())
-        columns = list(columns_for(self._mode))
+        self._by_iid = {}
         for index, row in enumerate(visible):
+            iid = str(row["id"]) if self._db_backed else str(index)
+            self._by_iid[iid] = row
             self.tree.insert(
-                "", "end", iid=str(index), values=[str(row.get(c, "")) for c in columns]
+                "",
+                "end",
+                iid=iid,
+                values=[_cell(row, column) for column, _, _, _ in _DISPLAY_COLUMNS],
             )
         self.count_label.configure(text=f"{len(visible)} de {len(self._rows)} linha(s)")
 
-    # -- interaction ------------------------------------------------------
-    def _selected_row(self) -> Mapping[str, object] | None:
-        selection = self.tree.selection()
-        if not selection:
-            return None
-        visible = self._visible_rows()
-        index = int(selection[0])
-        return visible[index] if 0 <= index < len(visible) else None
+    # -- selection helpers ------------------------------------------------
+    def _selected_ids(self) -> list[int]:
+        if not self._db_backed:
+            return []
+        return [int(iid) for iid in self.tree.selection() if iid.isdigit()]
 
-    def _sender(self, row: Mapping[str, object]) -> str:
+    def _selected_row(self) -> Mapping[str, Any] | None:
+        selection = self.tree.selection()
+        return self._by_iid.get(selection[0]) if selection else None
+
+    def _sender(self, row: Mapping[str, Any]) -> str:
         return str(row.get("remetente", "") or "")
+
+    # -- actions ----------------------------------------------------------
+    def _on_space(self, _event: tk.Event) -> str:
+        self._toggle()
+        return "break"
+
+    def _toggle(self) -> None:
+        if not self._db_backed:
+            self._on_status("A análise só existe para a lista de fotos (aba Fotos).", ok=False)
+            return
+        ids = self._selected_ids()
+        if not ids:
+            self._on_status("Selecione uma ou mais linhas.", ok=False)
+            return
+        rows = [row for row in self._rows if row.get("id") in ids]
+        included = all(bool(row.get("incluir")) for row in rows)
+        self._store.set_included(ids, not included)
+        self._on_changed()
+        state = "fora" if included else "dentro"
+        self._on_status(f"{len(ids)} linha(s) agora {state} da análise.")
+
+    def _delete(self) -> None:
+        if not self._db_backed:
+            self._on_status("A lixeira só existe para a lista de fotos (aba Fotos).", ok=False)
+            return
+        ids = self._selected_ids()
+        if not ids:
+            self._on_status("Selecione uma ou mais linhas para excluir.", ok=False)
+            return
+        self._store.delete(ids)
+        self._on_changed()
+        self._on_status(f"{len(ids)} linha(s) movida(s) para a lixeira.")
 
     def _show_preview(self) -> None:
         row = self._selected_row()
@@ -173,16 +237,19 @@ class ResultsView(ttk.Frame):
             return
         sender = self._sender(row)
         self.sender_label.configure(text=sender or "(sem remetente)")
-        avatar = images.sender_avatar(sender, _AVATAR_BOX)
-        self._avatar_img = self._render(self.avatar_label, avatar, "")
-        filename = str(row.get("foto_arquivo", "") or "")
-        image = None
-        if filename and self._source is not None:
-            image = images.load_photo(self._source, filename, _PREVIEW_BOX)
-        missing = "(mídia pendente — o arquivo não está no export)"
-        broken = "(não foi possível abrir esta imagem)"
-        fallback = missing if not filename else broken
-        self._photo_img = self._render(self.photo_label, image, fallback)
+        self._avatar = self._render(
+            self.avatar_label, images.sender_avatar(sender, _AVATAR_BOX), ""
+        )
+        data = None
+        if self._db_backed and row.get("id") is not None:
+            data = self._store.media(int(row["id"]))
+        image = images.image_from_bytes(data, _PREVIEW_BOX)
+        missing = (
+            "(mídia pendente — sem arquivo)"
+            if not row.get("foto_arquivo")
+            else "(imagem indisponível)"
+        )
+        self._image = self._render(self.photo_label, image, missing)
         lines = "\n".join(f"{key}: {value}" for key, value in row.items())
         self.details.configure(state="normal")
         self.details.delete("1.0", "end")
@@ -199,17 +266,16 @@ class ResultsView(ttk.Frame):
 
     def _open_viewer(self) -> None:
         row = self._selected_row()
-        if row is None or self._source is None:
+        if row is None or not self._db_backed or row.get("id") is None:
             return
-        filename = str(row.get("foto_arquivo", "") or "")
-        image = images.load_photo(self._source, filename, _VIEWER_BOX) if filename else None
+        image = images.image_from_bytes(self._store.media(int(row["id"])), _VIEWER_BOX)
         if image is None:
-            self._on_status("Esta mensagem não tem foto para abrir.", ok=False)
+            self._on_status("Esta linha não tem foto para abrir.", ok=False)
             return
         window = tk.Toplevel(self)
-        window.title(f"{row.get('remetente', '')} — {filename}")
-        self._viewer_img = images.to_photoimage(image)
-        tk.Label(window, image=self._viewer_img).pack()
+        window.title(f"{row.get('remetente', '')} — {row.get('foto_arquivo', '')}")
+        self._viewer = images.to_photoimage(image)
+        tk.Label(window, image=self._viewer).pack()
 
     def _choose_avatar(self) -> None:
         row = self._selected_row()
@@ -224,7 +290,7 @@ class ResultsView(ttk.Frame):
             sender = self._sender(row)
             avatars.set_avatar(sender, Path(chosen))
             self._show_preview()
-            self._on_status(f"Foto de {sender} atualizada.", ok=True)
+            self._on_status(f"Foto de {sender} atualizada.")
 
     def _clear_avatar(self) -> None:
         row = self._selected_row()
@@ -233,4 +299,84 @@ class ResultsView(ttk.Frame):
         sender = self._sender(row)
         avatars.remove_avatar(sender)
         self._show_preview()
-        self._on_status(f"Foto de {sender} removida.", ok=True)
+        self._on_status(f"Foto de {sender} removida.")
+
+
+class TrashView(ttk.Frame):
+    """Deleted rows, with restore and permanent removal."""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        store: Store,
+        on_status: StatusSink,
+        on_changed: Callable[[], None],
+    ) -> None:
+        super().__init__(master, padding=8)
+        self._store = store
+        self._on_status = on_status
+        self._on_changed = on_changed
+        self._build()
+
+    def _build(self) -> None:
+        toolbar = ttk.Frame(self)
+        toolbar.pack(fill="x")
+        ttk.Button(toolbar, text="Restaurar selecionados", command=self._restore).pack(side="left")
+        ttk.Button(toolbar, text="Excluir definitivamente (tudo)", command=self._purge).pack(
+            side="left", padx=4
+        )
+        self.count_label = ttk.Label(toolbar, text="lixeira vazia")
+        self.count_label.pack(side="left", padx=10)
+        self.tree = ttk.Treeview(
+            self,
+            show="headings",
+            selectmode="extended",
+            columns=("remetente", "data", "hora", "legenda", "arquivo"),
+        )
+        for column, title, width in (
+            ("remetente", "Remetente", 160),
+            ("data", "Data", 90),
+            ("hora", "Hora", 70),
+            ("legenda", "Legenda", 240),
+            ("arquivo", "Arquivo", 220),
+        ):
+            self.tree.heading(column, text=title)
+            self.tree.column(column, width=width, anchor="w", stretch=False)
+        self.tree.pack(fill="both", expand=True, pady=(8, 0))
+
+    def show(self, rows: Sequence[Mapping[str, Any]]) -> None:
+        """Load deleted rows into the table."""
+        self.tree.delete(*self.tree.get_children())
+        for row in rows:
+            self.tree.insert(
+                "",
+                "end",
+                iid=str(row["id"]),
+                values=(
+                    row.get("remetente", ""),
+                    row.get("data", ""),
+                    row.get("hora", ""),
+                    row.get("legenda", ""),
+                    row.get("foto_arquivo", ""),
+                ),
+            )
+        self.count_label.configure(
+            text=f"{len(rows)} item(ns) na lixeira" if rows else "lixeira vazia"
+        )
+
+    def _restore(self) -> None:
+        ids = [int(iid) for iid in self.tree.selection()]
+        if not ids:
+            self._on_status("Selecione o que restaurar.", ok=False)
+            return
+        self._store.restore(ids)
+        self._on_changed()
+        self._on_status(f"{len(ids)} item(ns) restaurado(s).")
+
+    def _purge(self) -> None:
+        if not messagebox.askyesno("wzsearch", "Apagar definitivamente tudo da lixeira?"):
+            return
+        removed = self._store.purge()
+        self._on_changed()
+        self._on_status(f"{removed} item(ns) apagado(s) de vez.")

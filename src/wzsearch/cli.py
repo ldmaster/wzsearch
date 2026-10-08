@@ -9,7 +9,14 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
-from .pipeline import GenerateResult, WzsearchError, generate_photos, generate_search
+from .pipeline import (
+    GenerateResult,
+    WzsearchError,
+    generate_photos,
+    generate_search,
+    import_photos,
+)
+from .store import Store
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--overwrite",
         action="store_true",
         help="rewrite the CSV from scratch instead of appending only new rows",
+    )
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="import the photo listing into a SQLite database instead of a CSV",
     )
     return parser
 
@@ -64,6 +77,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
+        if args.db is not None and args.photos:
+            store = Store(args.db)
+            imported = import_photos(args.inputs, store, eu=args.eu, chat=args.chat)
+            print(
+                f"{imported.added} nova(s), {imported.skipped} já existiam → {args.db}",
+                file=sys.stderr,
+            )
+            return 0
         if args.photos:
             result = generate_photos(
                 args.inputs,
@@ -88,6 +109,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except WzsearchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return exc.exit_code
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     _print_summary(result, handle=sys.stderr)
     return 0

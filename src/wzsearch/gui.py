@@ -1,9 +1,9 @@
 """Tkinter desktop front-end so people can use wzsearch without a terminal.
 
-Pick the WhatsApp export (drag it in or use the button), press *Gerar* and the
-rows appear in the *Resultados* tab, with photo preview, sender avatars and a
-*Salvar CSV* button. Nothing is written to disk until you save. Generation runs
-on a worker thread so the window keeps responding while a progress bar shows.
+Pick the WhatsApp export (drag it in or use the button) and press *Gerar*: the
+photos are stored in a local SQLite database and shown in the *Resultados* tab,
+with preview, avatars, an include/exclude toggle and a trash. Importing runs on
+a worker thread so the window keeps responding while a progress bar shows.
 """
 
 from __future__ import annotations
@@ -20,16 +20,19 @@ from tkinter import filedialog, messagebox, ttk
 
 from .avatars import config_dir
 from .gui_analytics import AnalyticsView
-from .gui_results import ResultsView
+from .gui_results import ResultsView, TrashView
 from .images import HEIF_AVAILABLE, PILLOW_AVAILABLE
 from .pipeline import (
     MODE_PHOTOS,
     MODE_SEARCH,
+    ImportResult,
     WzsearchError,
-    collect_photos,
     collect_search,
+    import_photos,
     save_rows,
 )
+from .store import Store
+from .writer import DB_COLUMNS, write_rows
 
 try:  # optional: real drag-and-drop
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -137,12 +140,11 @@ class _GeneratorPanel(ttk.Frame):
             ttk.Checkbutton(
                 self, text="Ignorar maiúsculas/minúsculas", variable=self.case_var
             ).pack(anchor="w", pady=(4, 0))
+            hint = "A busca mostra os resultados na hora (não vai para o banco)."
+        else:
+            hint = "As fotos são guardadas numa base local — ficam salvas entre sessões."
+        ttk.Label(self, text=hint, foreground="#666").pack(anchor="w", pady=(8, 0))
 
-        ttk.Label(
-            self,
-            text="Nada é gravado até você clicar em “Salvar CSV…” na aba Resultados.",
-            foreground="#666",
-        ).pack(anchor="w", pady=(8, 0))
         self.generate_button = ttk.Button(self, text="Gerar", command=self._generate)
         self.generate_button.pack(pady=(8, 0))
 
@@ -190,14 +192,13 @@ class WzsearchApp:
     def __init__(self, root: tk.Tk, *, log_path: Path | None = None) -> None:
         self.root = root
         self.root.title("wzsearch — fotos e buscas do WhatsApp")
-        self.root.minsize(780, 560)
+        self.root.minsize(900, 600)
         self.log_path = log_path
         self._queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._panels: list[_GeneratorPanel] = []
-        self._rows: list[dict[str, object]] = []
-        self._mode = MODE_PHOTOS
-        self._source: Path | None = None
+        self.store, self._store_warning = _open_store()
         self._build()
+        self._refresh()
 
     def _build(self) -> None:
         self.notebook = ttk.Notebook(self.root)
@@ -207,20 +208,48 @@ class WzsearchApp:
             self.notebook.add(panel, text=title)
             self._panels.append(panel)
 
-        self.results = ResultsView(self.notebook, on_save=self._save, on_status=self._set_status)
+        self.results = ResultsView(
+            self.notebook,
+            store=self.store,
+            on_status=self._set_status,
+            on_changed=self._refresh,
+            on_save=self._save,
+        )
         self.notebook.add(self.results, text="Resultados")
+        self.trash = TrashView(
+            self.notebook, store=self.store, on_status=self._set_status, on_changed=self._refresh
+        )
+        self.notebook.add(self.trash, text="Lixeira")
         self.analytics = AnalyticsView(self.notebook)
         self.notebook.add(self.analytics, text="Análises")
 
         bottom = ttk.Frame(self.root, padding=(10, 6, 10, 10))
         bottom.pack(fill="x")
-        self.progress = ttk.Progressbar(bottom, mode="indeterminate", length=140)
+        self.progress = ttk.Progressbar(bottom, mode="indeterminate", length=120)
         self.progress.pack(side="left")
         self.status = tk.Label(
             bottom, text="Pronto. Escolha o export e clique em Gerar.", anchor="w"
         )
         self.status.configure(foreground="#333")
         self.status.pack(side="left", fill="x", expand=True, padx=10)
+        self.summary = ttk.Label(bottom, text="")
+        self.summary.pack(side="right")
+
+    # -- data -------------------------------------------------------------
+    def _refresh(self) -> None:
+        self.results.show(self.store.rows())
+        deleted = [
+            row for row in self.store.rows(include_deleted=True) if row["status"] == "deleted"
+        ]
+        self.trash.show(deleted)
+        self.analytics.show(self.store.rows(only_included=True))
+        counts = self.store.counts()
+        self.summary.configure(
+            text=(
+                f"ativas {counts['active']} · fora da análise {counts['excluded']}"
+                f" · lixeira {counts['deleted']}"
+            )
+        )
 
     # -- actions ----------------------------------------------------------
     def _start(self, request: _Request) -> None:
@@ -231,8 +260,6 @@ class WzsearchApp:
             self._fail(" ".join(errors) or "Escolha o arquivo exportado.")
             return
 
-        self._source = request.source
-        self._mode = request.mode
         self._set_busy(True)
         self._set_status("Lendo a conversa…")
         _LOG.info("generate mode=%s source=%s", request.mode, request.source)
@@ -245,12 +272,12 @@ class WzsearchApp:
             return
         try:
             if request.mode == MODE_PHOTOS:
-                rows = collect_photos([source])
+                self._queue.put(("imported", import_photos([source], self.store)))
             else:
                 rows = collect_search(
                     [source], request.terms, request.regexes, ignore_case=request.ignore_case
                 )
-            self._queue.put(("rows", (rows, request.mode, source)))
+                self._queue.put(("rows", rows))
         except WzsearchError as exc:
             _LOG.warning("generation error: %s", exc)
             self._queue.put(("error", str(exc)))
@@ -265,45 +292,43 @@ class WzsearchApp:
             self.root.after(100, self._poll)
             return
         self._set_busy(False)
-        if kind == "rows" and isinstance(payload, tuple):
-            rows, mode, source = payload
-            self._present(rows, mode, source)
+        if kind == "imported" and isinstance(payload, ImportResult):
+            self._refresh()
+            self.notebook.select(self.results)  # type: ignore[no-untyped-call]
+            self._set_status(f"{payload.added} nova(s) no banco · {payload.skipped} já estavam lá.")
+        elif kind == "rows" and isinstance(payload, list):
+            self.results.show(payload)
+            self.notebook.select(self.results)  # type: ignore[no-untyped-call]
+            self._set_status(f"{len(payload)} ocorrência(s). Use Salvar CSV para exportar.")
         else:
             self._fail(str(payload))
 
-    def _present(self, rows: list[dict[str, object]], mode: str, source: Path) -> None:
-        self._rows = rows
-        self._mode = mode
-        self._source = source
-        self.results.show(rows, mode=mode, source=source)
-        self.analytics.show(rows)
-        self.notebook.select(self.results)  # type: ignore[no-untyped-call]
-        what = "foto(s)" if mode == MODE_PHOTOS else "ocorrência(s)"
-        self._set_status(f"{len(rows)} {what} — veja as abas Resultados e Análises.")
-
     def _save(self) -> None:
-        if not self._rows:
-            self._fail("Gere uma lista antes de salvar.")
+        rows = self.results.exportable()
+        if not rows:
+            self._fail("Não há linhas para salvar.")
             return
-        source = self._source
-        default_dir = str(source.parent) if source is not None else str(Path.home())
         chosen = filedialog.asksaveasfilename(
             title="Salvar CSV",
             defaultextension=".csv",
-            initialfile=default_output_name(source, self._mode),
-            initialdir=default_dir,
+            initialfile="fotos.csv",
             filetypes=[("CSV", "*.csv")],
         )
         if not chosen:
             return
         try:
-            result = save_rows(self._rows, self._mode, Path(chosen))
-        except WzsearchError as exc:
+            destination = Path(chosen)
+            if "id" in rows[0]:  # stored rows: plain export of the current view
+                with destination.open("w", encoding="utf-8-sig", newline="") as handle:
+                    write_rows(rows, handle, DB_COLUMNS)
+                self._set_status(f"{len(rows)} linha(s) salva(s) em {chosen}")
+            else:
+                result = save_rows([dict(row) for row in rows], MODE_SEARCH, destination)
+                self._set_status(f"{result.added} linha(s) salva(s) em {chosen}")
+        except (WzsearchError, OSError) as exc:
             self._fail(str(exc))
-            return
-        extra = f" ({result.skipped} já existiam)" if result.skipped else ""
-        self._set_status(f"{result.added} linha(s) salva(s) em {chosen}{extra}")
-        _LOG.info("saved %s rows to %s", result.added, chosen)
+        else:
+            _LOG.info("saved %s rows to %s", len(rows), chosen)
 
     # -- helpers ----------------------------------------------------------
     def _set_busy(self, busy: bool) -> None:
@@ -323,6 +348,15 @@ class WzsearchApp:
         _LOG.warning("user-facing error: %s", message)
         hint = f"\n\nDetalhes: {self.log_path}" if self.log_path else ""
         messagebox.showerror("wzsearch", f"{message}{hint}")
+
+
+def _open_store() -> tuple[Store, str | None]:
+    """Open the database, falling back to memory when it cannot be created."""
+    try:
+        return Store(), None
+    except Exception as exc:  # noqa: BLE001 - report and keep the app usable
+        _LOG.exception("could not open the database")
+        return Store(":memory:"), f"não foi possível abrir o banco ({exc}); usando memória"
 
 
 def _setup_logging() -> Path:
@@ -366,7 +400,9 @@ def main() -> int:
         messagebox.showerror("wzsearch", f"Erro inesperado: {exc}\n\nDetalhes: {log_path}")
 
     root.report_callback_exception = _report
-    WzsearchApp(root, log_path=log_path)
+    app = WzsearchApp(root, log_path=log_path)
+    if app._store_warning is not None:
+        app._set_status(app._store_warning, ok=False)
     root.mainloop()
     return 0
 

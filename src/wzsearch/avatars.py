@@ -7,16 +7,14 @@ a real photo per contact; the mapping sender -> image path is stored locally.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
-_ENV_HOME = "WZSEARCH_HOME"
+from .paths import data_dir
 
 
 def config_dir() -> Path:
-    """Directory holding user settings (``~/.wzsearch`` by default)."""
-    override = os.environ.get(_ENV_HOME)
-    return Path(override) if override else Path.home() / ".wzsearch"
+    """Directory holding user settings (the app data directory)."""
+    return data_dir()
 
 
 def avatars_file() -> Path:

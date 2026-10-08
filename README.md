@@ -176,19 +176,34 @@ se o Gatekeeper reclamar, use `xattr -d com.apple.quarantine wzsearch`.
 
 Quatro abas:
 
-- **Fotos** e **Buscar termo** — arraste o export (`.zip`/`.txt`); na busca, informe
-  termos/regex. Botão **Gerar** com barra de progresso.
-- **Resultados** — as linhas numa tabela, **sem gravar arquivo por padrão**, com
-  filtros (remetente, período, só pendentes), **prévia da foto**, **visualizador**
-  (duplo clique) e **avatares**. O botão **Salvar CSV…** grava quando você quiser
-  (incremental: salvar 2× não duplica).
+- **Fotos** — arraste o export (`.zip`/`.txt`) e clique em **Gerar**: as fotos vão para
+  uma **base local** e ficam salvas entre sessões (reimportar o mesmo export não duplica).
+- **Buscar termo** — termos/regex; o resultado aparece na hora (não vai para a base).
+- **Resultados** — as fotos numa tabela, com filtros (remetente, período, só pendentes),
+  **☑ incluir/excluir da análise** (botão ou tecla Espaço), **Excluir** (manda para a
+  lixeira), **prévia da foto**, **visualizador** (duplo clique), **avatares** e
+  **Salvar CSV…** (exporta a visão atual).
+- **Lixeira** — o que foi excluído, com **Restaurar** e **Excluir definitivamente**.
 - **Análises** — frequência de postagem: total/mídias pendentes, período, **tabela por
   remetente** (fotos, %, com arquivo, pendentes, dias ativos, 1ª e última foto),
   **mapa de calor dia da semana × hora** ("quando postam"), picos (hora/dia/mês mais
   ativos), **palavras mais usadas nas legendas**, **tipos de arquivo**, fotos por
   dia/mês/hora/dia da semana, dias mais movimentados, concentração (top 3),
   mais/menos ativa, média e mediana por dia ativo, intervalo médio/mediano entre
-  fotos e maior sequência de dias seguidos.
+  fotos e maior sequência de dias seguidos. Só entram as fotos **ativas e marcadas**.
+
+### Onde ficam os dados
+
+Um único arquivo SQLite com as fotos embutidas, na pasta de dados oculta do sistema
+(sobreponível com `WZSEARCH_HOME`):
+
+- macOS: `~/Library/Application Support/wzsearch/wzsearch.db`
+- Windows: `%APPDATA%\wzsearch\wzsearch.db`
+- Linux: `~/.local/share/wzsearch/wzsearch.db`
+
+A pasta guarda também os avatares e o `wzsearch.log`. O banco é dado pessoal local —
+nada sai da máquina; use a **Lixeira → Excluir definitivamente** para apagar o que não
+quiser manter. O CLI também importa para a base: `wzsearch export.zip --photos --db base.db`.
 
 As fotos são lidas **do zip direto para a memória** (nada é extraído para o disco).
 Formatos de imagem: `jpg`, `png`, `webp`, `gif` e **`heic`/`heif`** (fotos de iPhone,
