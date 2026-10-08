@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wzsearch"
-version = "0.1.0"
+version = "0.2.1"
 description = "Search an exported WhatsApp conversation for keywords/regex and emit an occurrences CSV."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,7 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
-gui = ["tkinterdnd2>=0.3", "Pillow>=10"]
+gui = ["tkinterdnd2>=0.3", "Pillow>=10", "pillow-heif>=0.16"]
 
 [project.scripts]
 wzsearch = "wzsearch.cli:main"
@@ -53,6 +53,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["PIL", "PIL.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pillow_heif", "pillow_heif.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

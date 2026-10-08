@@ -22,7 +22,7 @@ rm -rf build dist ./*.spec
 # A GUI vira um .app: no macOS isso exige modo onedir (--onefile é depreciado
 # com --windowed e vira erro no PyInstaller 7).
 "$PYINSTALLER" --windowed --name wzsearch-gui --paths src \
-    --collect-all tkinterdnd2 packaging/wzsearch_gui_entry.py
+    --collect-all tkinterdnd2 --collect-all pillow_heif packaging/wzsearch_gui_entry.py
 
 echo
 echo "Pronto!"

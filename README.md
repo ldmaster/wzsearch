@@ -187,6 +187,8 @@ Quatro abas:
   intervalo médio entre fotos e maior sequência de dias seguidos.
 
 As fotos são lidas **do zip direto para a memória** (nada é extraído para o disco).
+Formatos de imagem: `jpg`, `png`, `webp`, `gif` e **`heic`/`heif`** (fotos de iPhone,
+via `pillow-heif`, já incluído no executável).
 
 ### Avatares (foto do remetente)
 

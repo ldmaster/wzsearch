@@ -61,3 +61,18 @@ def test_load_photo_reads_from_zip(tmp_path: Path) -> None:
 def test_load_photo_missing_returns_none(tmp_path: Path) -> None:
     assert load_photo(tmp_path / "nope.zip", "x.png", 40) is None
     assert load_photo(tmp_path / "chat.txt", "x.png", 40) is None
+
+
+def test_load_heic_photo(tmp_path: Path) -> None:
+    pytest.importorskip("pillow_heif")
+    from wzsearch import images
+
+    buffer = BytesIO()
+    Image.new("RGB", (64, 48), "green").save(buffer, format="HEIF")
+    zip_path = tmp_path / "export.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("Conversa.txt", "x")
+        archive.writestr("IMG-1.heic", buffer.getvalue())
+    image = images.load_photo(zip_path, "IMG-1.heic", 32)
+    assert image is not None
+    assert max(image.size) <= 32

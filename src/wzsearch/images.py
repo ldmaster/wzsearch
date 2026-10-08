@@ -24,6 +24,16 @@ except ImportError:  # pragma: no cover - GUI still starts without previews
     ImageFont = None
     PILLOW_AVAILABLE = False
 
+HEIF_AVAILABLE = False
+if PILLOW_AVAILABLE:  # teach Pillow to open .heic/.heif when pillow-heif is present
+    try:
+        from pillow_heif import register_heif_opener
+
+        register_heif_opener()
+        HEIF_AVAILABLE = True
+    except ImportError:  # pragma: no cover - .heic photos simply will not preview
+        HEIF_AVAILABLE = False
+
 _PALETTE = (
     "#4a7ebb",
     "#c0392b",

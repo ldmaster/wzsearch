@@ -48,7 +48,8 @@ jobs:
         if: runner.os == 'Windows'
         run: >
           pyinstaller --onefile --windowed --name wzsearch-gui --paths src
-          --collect-all tkinterdnd2 packaging/wzsearch_gui_entry.py
+          --collect-all tkinterdnd2 --collect-all pillow_heif
+          packaging/wzsearch_gui_entry.py
       - name: Add drag-and-drop helper (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
