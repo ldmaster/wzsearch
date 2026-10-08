@@ -1,0 +1,12 @@
+12/03/2024 14:22 - As mensagens e as chamadas são protegidas com a criptografia de ponta a ponta.
+12/03/2024 14:23 - Você criou o grupo "Amigos"
+12/03/2024 14:24 - Fulano: Oi, tudo bem?
+12/03/2024 14:25 - Você: Tudo! Vamos falar do pix
+12/03/2024 14:25 - Fulano: Preciso do pix hoje
+ainda não recebi nada
+e o prazo era ontem
+12/03/2024 14:26 - Beltrano: Meu CPF é 123.456.789-00 e o CNPJ 12.345.678/0001-90
+12/03/2024 14:27 - Fulano: <anexo: 00000042-FOTO-2024-03-12-14-22-31.jpg>
+12/03/2024 14:28 - Fulano: pix pix pix
+12/03/2024 14:29 - Fulano: Pedido #A1234 pago, valor R$ 1.234,56
+12/03/2024 14:30 - Você: Meu telefone é (11) 91234-5678

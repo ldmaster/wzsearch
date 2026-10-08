@@ -1,0 +1,24 @@
+COMO USAR (Windows)
+===================
+
+Esta pasta contém a ferramenta "wzsearch", que lê uma conversa exportada do
+WhatsApp e monta uma planilha (CSV) com as FOTOS (quem mandou, quando e a
+legenda).
+
+PASSO A PASSO
+1. Descompacte esta pasta (botão direito > Extrair tudo), se ainda não fez.
+2. No WhatsApp, exporte a conversa: Abrir a conversa > menu (tres pontinhos)
+   > Mais > Exportar conversa > "Incluir midia".
+3. Arraste o arquivo exportado (.zip ou .txt) e solte EM CIMA do arquivo
+   "wzsearch.bat".
+4. Vai abrir uma janela preta e, ao terminar, aparecerá um arquivo
+   "<nome-do-export>_fotos.csv" na MESMA pasta do export.
+5. Abra esse .csv no Excel ou Google Sheets.
+
+OBSERVACOES
+- Nada é enviado para a internet; a ferramenta roda só no seu computador.
+- Ela NÃO copia as fotos: apenas indica o nome do arquivo dentro do export.
+- Se aparecer "midia_pendente = sim", a foto não estava incluída no export.
+- Se o Windows mostrar um aviso azul ("O Windows protegeu o seu PC"), clique
+  em "Mais informacoes" > "Executar assim mesmo". Isso acontece porque o
+  programa não tem assinatura digital paga.
