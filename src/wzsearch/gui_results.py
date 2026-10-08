@@ -17,6 +17,25 @@ _AVATAR_BOX = 44
 _VIEWER_BOX = 900
 _ALL_SENDERS = "(todos)"
 
+#: Row fields shown in the side panel (never the media blob).
+_DETAIL_KEYS = (
+    "id",
+    "remetente",
+    "telefone_remetente",
+    "data",
+    "hora",
+    "timestamp",
+    "chat",
+    "message_id",
+    "legenda",
+    "contexto",
+    "contexto_provavel",
+    "foto_arquivo",
+    "foto_existe",
+    "midia_pendente",
+    "status",
+)
+
 #: (column key, heading, width, anchor)
 _DISPLAY_COLUMNS: tuple[tuple[str, str, int, Literal["w", "center"]], ...] = (
     ("incluido", "Incluído", 70, "center"),
@@ -68,6 +87,8 @@ class ResultsView(ttk.Frame):
         self._image: Any = None
         self._avatar: Any = None
         self._viewer: Any = None
+        self._preview_id: int | None = None
+        self._avatar_cache: dict[str, Any] = {}
         self._build()
 
     # -- construction -----------------------------------------------------
@@ -235,26 +256,32 @@ class ResultsView(ttk.Frame):
         row = self._selected_row()
         if row is None:
             return
+        row_id = int(row["id"]) if self._db_backed and row.get("id") is not None else None
         sender = self._sender(row)
         self.sender_label.configure(text=sender or "(sem remetente)")
-        self._avatar = self._render(
-            self.avatar_label, images.sender_avatar(sender, _AVATAR_BOX), ""
-        )
-        data = None
-        if self._db_backed and row.get("id") is not None:
-            data = self._store.media(int(row["id"]))
-        image = images.image_from_bytes(data, _PREVIEW_BOX)
-        missing = (
-            "(mídia pendente — sem arquivo)"
-            if not row.get("foto_arquivo")
-            else "(imagem indisponível)"
-        )
-        self._image = self._render(self.photo_label, image, missing)
-        lines = "\n".join(f"{key}: {value}" for key, value in row.items())
+        self._avatar = self._render(self.avatar_label, self._avatar_image(sender), "")
+
+        if row_id != self._preview_id:
+            data = self._store.media(row_id) if row_id is not None else None
+            image = images.image_from_bytes(data, _PREVIEW_BOX)
+            missing = (
+                "(mídia pendente — sem arquivo)"
+                if not row.get("foto_arquivo")
+                else "(imagem indisponível)"
+            )
+            self._image = self._render(self.photo_label, image, missing)
+            self._preview_id = row_id
+
+        lines = "\n".join(f"{key}: {row.get(key, '')}" for key in _DETAIL_KEYS if key in row)
         self.details.configure(state="normal")
         self.details.delete("1.0", "end")
         self.details.insert("1.0", lines)
         self.details.configure(state="disabled")
+
+    def _avatar_image(self, sender: str) -> Any:
+        if sender not in self._avatar_cache:
+            self._avatar_cache[sender] = images.sender_avatar(sender, _AVATAR_BOX)
+        return self._avatar_cache[sender]
 
     def _render(self, widget: tk.Label, image: Any, fallback: str) -> Any:
         if image is None:
@@ -289,6 +316,7 @@ class ResultsView(ttk.Frame):
         if chosen:
             sender = self._sender(row)
             avatars.set_avatar(sender, Path(chosen))
+            self._avatar_cache.pop(sender, None)
             self._show_preview()
             self._on_status(f"Foto de {sender} atualizada.")
 
@@ -298,6 +326,7 @@ class ResultsView(ttk.Frame):
             return
         sender = self._sender(row)
         avatars.remove_avatar(sender)
+        self._avatar_cache.pop(sender, None)
         self._show_preview()
         self._on_status(f"Foto de {sender} removida.")
 

@@ -62,6 +62,9 @@ _FIELDS = (
     "midia_pendente",
 )
 
+#: Columns loaded when listing records (never the ``media`` blob).
+_LIST_COLUMNS = ("id", *_FIELDS, "incluir", "status", "deleted_at", "created_at")
+
 
 def default_db_path() -> Path:
     """Default database location (hidden per-user data directory)."""
@@ -130,7 +133,8 @@ class Store:
             clauses.append("incluir = 1")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         cursor = self._conn.execute(
-            f"SELECT * FROM photos {where} ORDER BY data, hora, id"  # noqa: S608 - fixed clauses
+            f"SELECT {', '.join(_LIST_COLUMNS)} FROM photos {where} "  # noqa: S608 - fixed columns
+            "ORDER BY data, hora, id"
         )
         return [dict(record) for record in cursor.fetchall()]
 
