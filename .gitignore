@@ -10,3 +10,4 @@ dist/
 *.spec
 *.csv
 .commandcode/
+.DS_Store
