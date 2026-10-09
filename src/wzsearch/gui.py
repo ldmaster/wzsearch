@@ -20,7 +20,7 @@ from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import backup, senders
+from . import __version__, backup, help_text, senders
 from .avatars import config_dir
 from .gui_analytics import AnalyticsView
 from .gui_data import DataView
@@ -36,7 +36,7 @@ from .pipeline import (
     import_photos,
     save_rows,
 )
-from .scroll import bind_wheel
+from .scroll import bind_wheel, bind_wheel_tree
 from .store import Store
 from .writer import DB_COLUMNS, write_rows
 
@@ -49,6 +49,15 @@ except ImportError:  # pragma: no cover - the button still works without it
 _LOG = logging.getLogger("wzsearch.gui")
 
 _EXPORT_TYPES = [("Export do WhatsApp", "*.zip *.txt"), ("Todos os arquivos", "*.*")]
+
+#: Window size on startup (the notebook would otherwise open as big as its
+#: tallest tab).
+_DEFAULT_GEOMETRY = "1120x720"
+_MIN_WIDTH = 880
+_MIN_HEIGHT = 540
+
+_REPO_URL = "https://github.com/ldmaster/wzsearch"
+_AUTHOR = "ldmaster"
 
 
 def _wheel_scroll(tree: ttk.Treeview, rows: int) -> None:
@@ -203,15 +212,58 @@ class WzsearchApp:
     def __init__(self, root: tk.Tk, *, log_path: Path | None = None) -> None:
         self.root = root
         self.root.title("wzsearch — fotos e buscas do WhatsApp")
-        self.root.minsize(900, 600)
+        self.root.geometry(_DEFAULT_GEOMETRY)
+        self.root.minsize(_MIN_WIDTH, _MIN_HEIGHT)
         self.log_path = log_path
         self._queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._panels: list[_GeneratorPanel] = []
         self.store, self._store_warning = _open_store()
+        self._build_menu()
         self._build()
         self._refresh()
         if self.store.counts()["active"]:
             self.notebook.select(self.results)  # type: ignore[no-untyped-call]
+
+    def _build_menu(self) -> None:
+        menubar = tk.Menu(self.root)
+        help_menu = tk.Menu(menubar, tearoff=False)
+        help_menu.add_command(label="Como usar cada aba", command=self._show_help)
+        help_menu.add_command(label="Sobre o wzsearch", command=self._show_about)
+        menubar.add_cascade(label="Ajuda", menu=help_menu)
+        self.root.configure(menu=menubar)
+
+    def _show_help(self) -> None:
+        """Open a scrollable window explaining every tab."""
+        window = tk.Toplevel(self.root)
+        window.title("Como usar o wzsearch")
+        window.geometry("640x560")
+        text = tk.Text(window, wrap="word", padx=14, pady=12)
+        bar = ttk.Scrollbar(window, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=bar.set)
+        bar.pack(side="right", fill="y")
+        text.pack(side="left", fill="both", expand=True)
+        text.tag_configure("title", font=("TkDefaultFont", 12, "bold"), spacing3=4)
+        text.insert("end", "wzsearch\n", "title")
+        text.insert("end", help_text.INTRO + "\n\n")
+        for title, body in help_text.SECTIONS:
+            text.insert("end", title + "\n", "title")
+            text.insert("end", body + "\n\n")
+        text.insert("end", "Dicas\n", "title")
+        for tip in help_text.TIPS:
+            text.insert("end", f"• {tip}\n")
+        text.configure(state="disabled")
+        bind_wheel_tree(text, lambda rows: text.yview_scroll(rows, "units"))
+
+    def _show_about(self) -> None:
+        """Show a short about box."""
+        messagebox.showinfo(
+            "Sobre o wzsearch",
+            f"wzsearch {__version__}\n\n"
+            "Lê uma conversa exportada do WhatsApp e mostra as fotos do chat "
+            "com estatísticas.\n\n"
+            f"Feito por {_AUTHOR}.\n{_REPO_URL}\n\n"
+            "Python + Tkinter; roda 100% offline, sem enviar nada para a internet.",
+        )
 
     def _build(self) -> None:
         self.notebook = ttk.Notebook(self.root)

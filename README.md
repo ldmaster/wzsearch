@@ -176,7 +176,7 @@ se o Gatekeeper reclamar, use `xattr -d com.apple.quarantine wzsearch`.
 
 ## Tela gráfica (GUI)
 
-Quatro abas:
+Seis abas + menu de ajuda:
 
 - **Fotos** — arraste o export (`.zip`/`.txt`) e clique em **Gerar**: as fotos vão para
   uma **base local** e ficam salvas entre sessões (reimportar o mesmo export não duplica).
@@ -189,8 +189,6 @@ Quatro abas:
 - **Remetentes** — dá um **nome** para quem aparece como número (ex.: `+55 11 9…` →
   "Ana"). O nome passa a valer na tabela de Resultados, no filtro e nas Análises.
 - **Lixeira** — o que foi excluído, com **Restaurar** e **Excluir definitivamente**.
-- **Dados** — **Fazer backup de todos os dados…** (um `.zip` com o banco, os nomes e os
-  avatares), **Restaurar backup…** e **Apagar todos os dados** (irreversível).
 - **Análises** — frequência de postagem: total/mídias pendentes, período, **tabela por
   remetente** (fotos, %, com arquivo, pendentes, dias ativos, 1ª e última foto),
   **mapa de calor dia da semana × hora** ("quando postam"), picos (hora/dia/mês mais
@@ -199,6 +197,12 @@ Quatro abas:
   mais/menos ativa, média e mediana por dia ativo, intervalo médio/mediano entre
   fotos e maior sequência de dias seguidos. Só entram as fotos **ativas e marcadas**, e
   um **filtro no topo** mostra o **geral** ou **por remetente**.
+- **Dados** — **Fazer backup de todos os dados…** (um `.zip` com o banco, os nomes e os
+  avatares), **Restaurar backup…** e **Apagar todos os dados** (irreversível).
+- **Menu Ajuda** — *Como usar cada aba* (uma janela com o guia de cada tela e dicas) e
+  *Sobre o wzsearch* (versão e autor).
+
+Ideias de evolução da interface estão em [`docs/ui-ideias.md`](docs/ui-ideias.md).
 
 ### Onde ficam os dados
 

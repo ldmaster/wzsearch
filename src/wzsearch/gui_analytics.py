@@ -9,6 +9,7 @@ from typing import Literal
 
 from .analytics import WEEKDAY_LABELS, PhotoStats, filter_rows, photo_stats
 from .chart import BarChart, Heatmap
+from .scroll import bind_wheel_tree
 
 _ALL = "(todos)"
 
@@ -66,6 +67,7 @@ class AnalyticsView(ttk.Frame):
         canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
+        self._canvas = canvas
 
         self._inner = ttk.Frame(canvas)
         window = canvas.create_window((0, 0), window=self._inner, anchor="nw")
@@ -79,6 +81,7 @@ class AnalyticsView(ttk.Frame):
         self._all_rows: list[dict[str, object]] = []
         self.sender_var = tk.StringVar(value=_ALL)
         self._build()
+        bind_wheel_tree(self, lambda rows: self._canvas.yview_scroll(rows, "units"))
 
     def _build(self) -> None:
         filter_box = ttk.Frame(self._inner)

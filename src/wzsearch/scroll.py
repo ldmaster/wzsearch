@@ -53,3 +53,14 @@ def bind_wheel(widget: tk.Misc, scroll_by: Callable[[int], None]) -> None:
     widget.bind("<MouseWheel>", on_wheel, add="+")
     widget.bind("<Button-4>", on_up, add="+")
     widget.bind("<Button-5>", on_down, add="+")
+
+
+def bind_wheel_tree(widget: tk.Misc, scroll_by: Callable[[int], None]) -> None:
+    """Bind wheel scrolling on ``widget`` and every descendant.
+
+    Handy for a scrollable page: the wheel event goes to the widget under the
+    pointer (a label, a chart canvas…), so each one has to forward it.
+    """
+    bind_wheel(widget, scroll_by)
+    for child in widget.winfo_children():
+        bind_wheel_tree(child, scroll_by)
