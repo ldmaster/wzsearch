@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tkinter as tk
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
@@ -11,6 +12,7 @@ from typing import Any, Literal, Protocol
 
 from . import avatars, images
 from .analytics import filter_rows
+from .dnd import dnd_available, register_drop
 from .store import Store
 
 _PREVIEW_BOX = 260
@@ -21,6 +23,17 @@ _VIEWER_BOX = 900
 _ALL_SENDERS = "(todos)"
 _CELL_TEXT = 80
 _PREVIEW_DELAY_MS = 60
+_FILTER_DELAY_MS = 200
+
+_EXPORT_TYPES = [("Export do WhatsApp", "*.zip *.txt"), ("Todos os arquivos", "*.*")]
+
+#: Fields a text search looks at.
+_SEARCH_FIELDS = ("remetente", "contexto", "legenda", "contexto_provavel", "foto_arquivo")
+
+
+def _searchable(row: Mapping[str, Any]) -> str:
+    return " ".join(str(row.get(key, "") or "") for key in _SEARCH_FIELDS)
+
 
 #: Row fields shown in the side panel (never the media blob).
 _DETAIL_KEYS = (
@@ -79,7 +92,7 @@ def _cell(row: Mapping[str, Any], column: str) -> str:
 
 
 class ResultsView(ttk.Frame):
-    """Table of stored rows: preview, avatars, include toggle, delete and save."""
+    """The unified screen: import, filter, preview, include toggle, delete, save."""
 
     def __init__(
         self,
@@ -89,12 +102,16 @@ class ResultsView(ttk.Frame):
         on_status: StatusSink,
         on_changed: Callable[[], None],
         on_save: Callable[[], None],
+        on_import: Callable[[Path], None] | None = None,
     ) -> None:
         super().__init__(master, padding=8)
         self._store = store
         self._on_status = on_status
         self._on_changed = on_changed
         self._on_save = on_save
+        self._on_import = on_import
+        self._source: Path | None = None
+        self._filter_job: str | None = None
         self._rows: list[Mapping[str, Any]] = []
         self._by_iid: dict[str, Mapping[str, Any]] = {}
         self._db_backed = False
@@ -111,6 +128,36 @@ class ResultsView(ttk.Frame):
 
     # -- construction -----------------------------------------------------
     def _build(self) -> None:
+        drop_text = "Arraste o export do WhatsApp (.zip/.txt) aqui"
+        if dnd_available():
+            drop_text += " ou clique para escolher"
+        self.drop = tk.Label(
+            self,
+            text=drop_text,
+            relief="groove",
+            borderwidth=2,
+            background="#f2f2f2",
+            foreground="#333333",
+            cursor="hand2",
+            height=3,
+            justify="center",
+        )
+        self.drop.pack(fill="x")
+        self.drop.bind("<Button-1>", lambda _event: self._choose_input())
+        register_drop(self.drop, self._on_drop)
+
+        import_row = ttk.Frame(self)
+        import_row.pack(fill="x", pady=(4, 6))
+        ttk.Button(import_row, text="Escolher arquivo…", command=self._choose_input).pack(
+            side="left"
+        )
+        self.input_label = ttk.Label(
+            import_row, text="nenhum arquivo escolhido", foreground="#c0392b"
+        )
+        self.input_label.pack(side="left", padx=8)
+        self.import_button = ttk.Button(import_row, text="Gerar", command=self._generate)
+        self.import_button.pack(side="left")
+
         toolbar = ttk.Frame(self)
         toolbar.pack(fill="x")
         ttk.Button(toolbar, text="Incluir/Excluir da análise (Espaço)", command=self._toggle).pack(
@@ -126,6 +173,16 @@ class ResultsView(ttk.Frame):
 
         filters = ttk.Frame(self)
         filters.pack(fill="x", pady=(4, 0))
+        ttk.Label(filters, text="Buscar:").pack(side="left")
+        self.query_var = tk.StringVar()
+        query_entry = ttk.Entry(filters, textvariable=self.query_var, width=18)
+        query_entry.pack(side="left", padx=(2, 4))
+        query_entry.bind("<Return>", lambda _event: self._apply_filters())
+        self.regex_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            filters, text="regex", variable=self.regex_var, command=self._apply_filters
+        ).pack(side="left", padx=(0, 8))
+        self.query_var.trace_add("write", lambda *_args: self._schedule_filter())
         ttk.Label(filters, text="Remetente:").pack(side="left")
         self.sender_var = tk.StringVar(value=_ALL_SENDERS)
         self.sender_box = ttk.Combobox(
@@ -265,13 +322,57 @@ class ResultsView(ttk.Frame):
 
     def _visible_rows(self) -> list[Mapping[str, Any]]:
         sender = self.sender_var.get()
-        return filter_rows(
+        rows = filter_rows(
             self._rows,
             sender=None if sender == _ALL_SENDERS else sender,
             start=self.start_var.get().strip() or None,
             end=self.end_var.get().strip() or None,
             only_pending=bool(self.pending_var.get()),
         )
+        term = self.query_var.get().strip()
+        if not term:
+            return rows
+        if self.regex_var.get():
+            try:
+                pattern = re.compile(term, re.IGNORECASE)
+            except re.error as exc:
+                self._on_status(f"regex inválida: {exc}", ok=False)
+                return rows
+        else:
+            pattern = re.compile(re.escape(term), re.IGNORECASE)
+        return [row for row in rows if pattern.search(_searchable(row))]
+
+    def _schedule_filter(self) -> None:
+        """Re-filter while typing, a moment after the last keystroke."""
+        if self._filter_job is not None:
+            self.after_cancel(self._filter_job)
+        self._filter_job = self.after(_FILTER_DELAY_MS, self._apply_filters)
+
+    # -- importing --------------------------------------------------------
+    def _choose_input(self) -> None:
+        chosen = filedialog.askopenfilename(title="Escolha o export", filetypes=_EXPORT_TYPES)
+        if chosen:
+            self._set_source(Path(chosen))
+
+    def _on_drop(self, data: str) -> None:
+        paths = self.tk.splitlist(data)
+        if paths:
+            self._set_source(Path(str(paths[0])))
+
+    def _set_source(self, path: Path) -> None:
+        self._source = path
+        self.input_label.configure(text=str(path), foreground="#1a7f37")
+
+    def _generate(self) -> None:
+        if self._source is None:
+            self._on_status("Escolha o arquivo exportado do WhatsApp (.zip ou .txt).", ok=False)
+            return
+        if self._on_import is not None:
+            self._on_import(self._source)
+
+    def set_busy(self, busy: bool) -> None:
+        """Enable or disable the *Gerar* button."""
+        self.import_button.configure(state="disabled" if busy else "normal")
 
     def _apply_filters(self) -> None:
         visible = self._visible_rows()

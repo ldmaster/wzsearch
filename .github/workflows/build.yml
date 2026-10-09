@@ -52,10 +52,6 @@ jobs:
           --icon packaging\icon.ico
           --collect-all tkinterdnd2 --collect-all pillow_heif
           packaging/wzsearch_gui_entry.py
-      - name: Add instructions (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Copy-Item packaging/windows/COMO-USAR.txt dist/
       - name: Package zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

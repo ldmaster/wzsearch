@@ -152,15 +152,10 @@ Os binários ficam nas **Releases** do repositório — baixáveis por qualquer 
 
 - https://github.com/ldmaster/wzsearch/releases
 
-Baixe `wzsearch-windows.zip` e descompacte. Dentro dele:
-
-- **`wzsearch-gui.exe`** — o app: duplo clique, arraste o export, escolha o
-  nome/pasta e clique em *Gerar*.
-- `COMO-USAR.txt` — instruções em linguagem simples.
-
-O pacote do Windows traz **só o executável da tela**. O antigo `wzsearch.bat`
-(que rodava a versão de linha de comando por arrastar-e-soltar) foi descontinuado.
-O CLI continua disponível para quem instala o pacote com `pip`/`uv`.
+Baixe `wzsearch-windows.zip` e descompacte: dentro dele há **só o `wzsearch-gui.exe`**
+(duplo clique para abrir) — as instruções de uso estão na própria janela, no menu
+**Ajuda → Como usar…**. O antigo `wzsearch.bat` e o arquivo de instruções foram
+descontinuados. O CLI continua disponível para quem instala o pacote com `pip`/`uv`.
 
 Para gerar uma nova release, crie e envie uma tag:
 
@@ -176,19 +171,14 @@ se o Gatekeeper reclamar, use `xattr -d com.apple.quarantine wzsearch`.
 
 ## Tela gráfica (GUI)
 
-Seis abas + menu de ajuda:
+Duas abas de trabalho + menus:
 
-- **Fotos** — arraste o export (`.zip`/`.txt`) e clique em **Gerar**: as fotos vão para
-  uma **base local** e ficam salvas entre sessões (reimportar o mesmo export não duplica).
-- **Buscar termo** — termos/regex; o resultado aparece na hora (não vai para a base).
-- **Resultados** — as fotos numa tabela (com **barra de rolagem**), filtros (remetente,
-  período, só pendentes), **☑ incluir/excluir da análise** (botão ou tecla Espaço),
-  **Excluir** (manda para a lixeira), **prévia da foto**, **visualizador** (duplo clique),
-  **avatares** e **Salvar CSV…** (exporta a visão atual). Quando a base já tem registros,
-  o app **abre nesta aba**.
-- **Remetentes** — dá um **nome** para quem aparece como número (ex.: `+55 11 9…` →
-  "Ana"). O nome passa a valer na tabela de Resultados, no filtro e nas Análises.
-- **Lixeira** — o que foi excluído, com **Restaurar** e **Excluir definitivamente**.
+- **Explorar** — a tela principal. Arraste o export (`.zip`/`.txt`) e clique em
+  **Gerar**: as fotos vão para uma **base local** e ficam salvas entre sessões
+  (reimportar o mesmo export não duplica). A lista tem **busca por termo ou regex**,
+  filtros (remetente, período, só pendentes), **☑ incluir/excluir da análise**
+  (botão ou tecla Espaço), **Excluir** (manda para a lixeira), **prévia da foto**,
+  **visualizador** (duplo clique), **Colunas…** e **Salvar CSV…**.
 - **Análises** — frequência de postagem: total/mídias pendentes, período, **tabela por
   remetente** (fotos, %, com arquivo, pendentes, dias ativos, 1ª e última foto),
   **mapa de calor dia da semana × hora** ("quando postam"), picos (hora/dia/mês mais
@@ -197,12 +187,15 @@ Seis abas + menu de ajuda:
   mais/menos ativa, média e mediana por dia ativo, intervalo médio/mediano entre
   fotos e maior sequência de dias seguidos. Só entram as fotos **ativas e marcadas**, e
   um **filtro no topo** mostra o **geral** ou **por remetente**.
-- **Dados** — **Fazer backup de todos os dados…** (um `.zip` com o banco, os nomes e os
-  avatares), **Restaurar backup…** e **Apagar todos os dados** (irreversível).
-- **Menu Ajuda** — *Como usar cada aba* (uma janela com o guia de cada tela e dicas) e
-  *Sobre o wzsearch* (versão e autor).
+- **⚙ Ajustes** (canto superior direito) — **Remetentes** (dar nome a quem aparece como
+  número; o nome vale na lista, nos filtros e nas Análises), **Lixeira** (restaurar ou
+  excluir de vez) e **Dados e backup** (backup num `.zip`, restaurar, apagar tudo).
+- **Menu Ajuda** — *Como usar…* abre uma janela com **tópicos** à esquerda (Começando,
+  Explorar, Análises, Remetentes, Lixeira, Dados, Privacidade), conteúdo formatado à
+  direita e um botão que leva direto para a aba. *Sobre o wzsearch* mostra versão e autor.
 
-Ideias de evolução da interface estão em [`docs/ui-ideias.md`](docs/ui-ideias.md).
+Ideias de evolução da interface estão em [`docs/ui-ideias.md`](docs/ui-ideias.md) e os
+protótipos clicáveis em [`docs/ui-prototipos.html`](docs/ui-prototipos.html).
 
 ### Onde ficam os dados
 

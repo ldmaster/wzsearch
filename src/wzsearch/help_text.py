@@ -1,67 +1,109 @@
-"""The text shown in the Help window (kept out of the GUI code)."""
+"""The help content, as structured topics (rendered by :mod:`wzsearch.gui_help`)."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 INTRO = (
-    "O wzsearch lê uma conversa exportada do WhatsApp (.zip ou .txt) e mostra as "
-    "fotos do chat — quem mandou, quando, a legenda — com estatísticas. Tudo roda "
-    "no seu computador e fica guardado numa base local."
+    "O wzsearch lê uma conversa exportada do WhatsApp e mostra as fotos do chat — "
+    "quem mandou, quando e a legenda — com estatísticas. Tudo roda no seu computador."
 )
 
-#: (tab, what it does)
-SECTIONS: tuple[tuple[str, str], ...] = (
-    (
-        "Aba Fotos",
-        "Onde tudo começa. Arraste o export do WhatsApp (.zip ou .txt) para a área "
-        "da tela, ou clique em “Escolher arquivo…”, e depois em “Gerar”. As fotos "
-        "são gravadas numa base local: ficam salvas entre sessões e reimportar o "
-        "mesmo export não duplica nada.",
+
+@dataclass(frozen=True, slots=True)
+class Topic:
+    """One help topic shown in the list on the left."""
+
+    title: str
+    summary: str
+    bullets: tuple[str, ...]
+    tab: str | None = None
+    tip: str | None = None
+
+
+TOPICS: tuple[Topic, ...] = (
+    Topic(
+        title="Começando",
+        summary="Importar a conversa leva dois passos.",
+        bullets=(
+            "No WhatsApp: abra a conversa, menu (três pontinhos) → Mais → "
+            "Exportar conversa → “Incluir mídia”.",
+            "No wzsearch: arraste o arquivo .zip/.txt para a área da tela ou clique "
+            "em “Escolher arquivo…”, e depois em “Gerar”.",
+            "As fotos ficam numa base local: na próxima vez já estarão lá e "
+            "reimportar o mesmo export não duplica nada.",
+        ),
+        tip="Conversas grandes podem vir em vários .zip — importe todos, um por vez.",
     ),
-    (
-        "Aba Buscar termo",
-        "Consulta pontual, sem gravar na base. Informe um ou mais termos separados "
-        "por vírgula e/ou uma expressão regular (regex) e clique em “Gerar”. O "
-        "resultado aparece na hora; use “Salvar CSV…” para exportar.",
+    Topic(
+        title="Explorar (a lista)",
+        summary="A tela principal: filtrar, ver a foto e decidir o que entra nas análises.",
+        bullets=(
+            "Filtre por remetente, por período, por “só pendentes” ou digitando um "
+            "termo (marque “regex” para usar uma expressão regular).",
+            "Clique numa linha para ver a foto e todos os campos no painel da direita; "
+            "duplo clique abre a foto em tamanho maior.",
+            "☑/☐ (ou a tecla Espaço) decide o que entra nas Análises.",
+            "“Excluir” tira a linha da lista e manda para a lixeira.",
+            "“Colunas…” escolhe o que a tabela mostra; “Salvar CSV…” exporta o que está na tela.",
+        ),
+        tab="Explorar",
+        tip="O botão “Colunas…” tem um preset “Enxuto” para quando quiser mais velocidade.",
     ),
-    (
-        "Aba Resultados",
-        "A lista das fotos. Filtre por remetente, período ou “só pendentes”. "
-        "Selecione uma linha para ver a foto e todos os campos no painel da "
-        "direita (duplo clique abre a foto em tamanho maior).\n\n"
-        "• ☑ / ☐ (tecla Espaço): decide o que entra nas Análises.\n"
-        "• Excluir (lixeira): tira da lista, mas pode ser restaurado.\n"
-        "• Colunas…: escolhe quais colunas aparecem (há um preset “Enxuto”).\n"
-        "• Salvar CSV…: exporta a lista que está na tela.",
+    Topic(
+        title="Análises",
+        summary="Estatísticas de quem postou o quê.",
+        bullets=(
+            "Tabela por remetente: fotos, %, com arquivo, pendentes, dias ativos e "
+            "primeira/última foto.",
+            "Mapa de calor de dia da semana × hora; fotos por dia, mês, hora e dia da semana.",
+            "Palavras mais usadas nas legendas, tipos de arquivo e dias mais movimentados.",
+            "O filtro no topo mostra o geral ou um remetente só.",
+        ),
+        tab="Análises",
+        tip="Só entram as fotos ativas e marcadas com ☑ na aba Explorar.",
     ),
-    (
-        "Aba Remetentes",
-        "Dá um nome para quem aparece como número (ex.: “+55 11 9…” → “Ana”). O nome "
-        "passa a valer na tabela de Resultados, nos filtros e nas Análises. O topo "
-        "mostra quantos remetentes existem e quantos já têm nome.",
+    Topic(
+        title="Remetentes",
+        summary="Dar nome a quem aparece como número.",
+        bullets=(
+            "Escolha um remetente na lista, digite o nome e clique em “Salvar nome”.",
+            "O nome passa a valer na lista, nos filtros e nas Análises.",
+            "O topo mostra quantos remetentes existem e quantos já têm nome.",
+        ),
+        tip="Serve para trocar “+55 11 91234-5678” por “Ana” em todo o app.",
     ),
-    (
-        "Aba Lixeira",
-        "O que você excluiu fica aqui. “Restaurar selecionados” devolve para a "
-        "lista; “Excluir definitivamente” apaga de vez.",
+    Topic(
+        title="Lixeira",
+        summary="O que você excluiu fica guardado aqui.",
+        bullets=(
+            "“Restaurar selecionados” devolve as linhas para a lista.",
+            "“Excluir definitivamente” apaga de vez (não dá para desfazer).",
+        ),
     ),
-    (
-        "Aba Análises",
-        "Estatísticas de quem postou: total, período, tabela por remetente, mapa de "
-        "calor de dia da semana × hora, fotos por dia/mês/hora, palavras mais usadas "
-        "nas legendas, tipos de arquivo e dias mais movimentados. O filtro no topo "
-        "mostra o geral ou um remetente só. Só entram as fotos ativas e marcadas.",
+    Topic(
+        title="Dados e backup",
+        summary="Levar tudo para outro computador ou começar de novo.",
+        bullets=(
+            "“Fazer backup de todos os dados…” gera um único .zip com a base (fotos "
+            "incluídas), os nomes e os avatares.",
+            "“Restaurar backup…” substitui os dados atuais pelos do arquivo.",
+            "“Apagar todos os dados” limpa tudo — é irreversível.",
+        ),
+        tip="O backup é a forma de levar o histórico para outra máquina.",
     ),
-    (
-        "Aba Dados",
-        "Backup de tudo (um .zip com o banco, os nomes e os avatares), restauração de "
-        "um backup e “Apagar todos os dados”. O backup é a forma de levar os dados "
-        "para outro computador.",
+    Topic(
+        title="Privacidade",
+        summary="O que acontece com os seus dados.",
+        bullets=(
+            "Nada é enviado para a internet: o programa roda offline.",
+            "As fotos ficam numa base local (um arquivo .db) na pasta de dados do usuário.",
+            "O programa não copia mídia para fora dele; só referencia e mostra.",
+        ),
     ),
 )
 
-TIPS = (
-    "Arrastar e soltar: funciona na área pontilhada das abas Fotos e Buscar termo.",
-    "Atalhos: Espaço alterna ☑/☐; setas andam pela lista; duplo clique abre a foto.",
-    "Nada é enviado para a internet e as fotos não são copiadas para fora do programa.",
-    "“mídia pendente” quer dizer que aquela foto não estava incluída no export.",
-)
+
+def topic_by_tab(tab: str) -> Topic | None:
+    """Return the topic that documents a given tab (used by the Help menu)."""
+    return next((topic for topic in TOPICS if topic.tab == tab), None)

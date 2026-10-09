@@ -4,9 +4,9 @@ import pytest
 
 pytest.importorskip("tkinter")
 
+from wzsearch.dnd import dnd_available  # noqa: E402
 from wzsearch.gui import (  # noqa: E402
     default_output_name,
-    dnd_available,
     validate_source,
 )
 

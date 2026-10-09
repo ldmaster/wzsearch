@@ -1,9 +1,9 @@
 """Tkinter desktop front-end so people can use wzsearch without a terminal.
 
-Pick the WhatsApp export (drag it in or use the button) and press *Gerar*: the
-photos are stored in a local SQLite database and shown in the *Resultados* tab,
-with preview, avatars, an include/exclude toggle and a trash. Importing runs on
-a worker thread so the window keeps responding while a progress bar shows.
+One working screen: import the export, filter the list, preview the photos and
+decide what counts. Remetentes, Lixeira and Dados live behind the *Ajustes*
+menu, and a Help menu explains each part. Importing runs on a worker thread so
+the window keeps responding while a progress bar shows.
 """
 
 from __future__ import annotations
@@ -14,41 +14,31 @@ import sys
 import threading
 import tkinter as tk
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import __version__, backup, help_text, senders
+from . import __version__, backup, senders
 from .avatars import config_dir
+from .dnd import TkinterDnD, dnd_available
 from .gui_analytics import AnalyticsView
 from .gui_data import DataView
+from .gui_help import HelpWindow
 from .gui_results import ResultsView, TrashView
 from .gui_senders import SendersView
 from .images import HEIF_AVAILABLE, PILLOW_AVAILABLE
 from .pipeline import (
     MODE_PHOTOS,
-    MODE_SEARCH,
     ImportResult,
     WzsearchError,
-    collect_search,
     import_photos,
-    save_rows,
 )
-from .scroll import bind_wheel, bind_wheel_tree
+from .scroll import bind_wheel
 from .store import Store
 from .writer import DB_COLUMNS, write_rows
 
-try:  # optional: real drag-and-drop
-    from tkinterdnd2 import DND_FILES, TkinterDnD
-except ImportError:  # pragma: no cover - the button still works without it
-    DND_FILES = None
-    TkinterDnD = None
-
 _LOG = logging.getLogger("wzsearch.gui")
-
-_EXPORT_TYPES = [("Export do WhatsApp", "*.zip *.txt"), ("Todos os arquivos", "*.*")]
 
 #: Window size on startup (the notebook would otherwise open as big as its
 #: tallest tab).
@@ -65,17 +55,6 @@ def _wheel_scroll(tree: ttk.Treeview, rows: int) -> None:
     tree.yview_scroll(rows, "units")
 
 
-@dataclass(frozen=True, slots=True)
-class _Request:
-    """Everything one run needs, gathered from a tab."""
-
-    mode: str
-    source: Path | None
-    terms: tuple[str, ...] = ()
-    regexes: tuple[str, ...] = ()
-    ignore_case: bool = False
-
-
 def default_output_name(source: Path | None, mode: str) -> str:
     """Suggest an output file name based on the export's name."""
     stem = source.stem if source is not None and source.stem else "conversa"
@@ -85,125 +64,12 @@ def default_output_name(source: Path | None, mode: str) -> str:
 def validate_source(source: Path | None) -> list[str]:
     """Return problems with the chosen export (empty when fine)."""
     if source is None:
-        return [
-            "Escolha o arquivo exportado do WhatsApp (arraste ou clique em “Escolher arquivo…”)."
-        ]
+        return ["Escolha o arquivo exportado do WhatsApp (.zip ou .txt)."]
     if not source.exists():
         return [f"Arquivo não encontrado: {source}"]
     if source.suffix.lower() not in {".zip", ".txt"}:
         return ["O arquivo precisa ser .zip ou .txt."]
     return []
-
-
-def dnd_available() -> bool:
-    """Whether real drag-and-drop is available."""
-    return DND_FILES is not None
-
-
-def _register_drop(widget: tk.Widget, callback: Callable[[str], None]) -> None:
-    """Enable drop on ``widget`` when tkinterdnd2 is available."""
-    register = getattr(widget, "drop_target_register", None)
-    bind = getattr(widget, "dnd_bind", None)
-    if DND_FILES is None or register is None or bind is None:
-        return
-    register(DND_FILES)
-    bind("<<Drop>>", lambda event: callback(str(event.data)))
-
-
-class _GeneratorPanel(ttk.Frame):
-    """Widgets for one input tab (photo listing or term search)."""
-
-    def __init__(
-        self,
-        master: tk.Misc,
-        *,
-        mode: str,
-        on_generate: Callable[[_Request], None],
-    ) -> None:
-        super().__init__(master, padding=12)
-        self.mode = mode
-        self._on_generate = on_generate
-        self.source: Path | None = None
-        self.terms_var = tk.StringVar()
-        self.regex_var = tk.StringVar()
-        self.case_var = tk.BooleanVar(value=True)
-        self._build()
-
-    def _build(self) -> None:
-        drop_text = "Arraste o export do WhatsApp (.zip ou .txt) aqui"
-        if dnd_available():
-            drop_text += "\nou clique para escolher"
-        self.drop = tk.Label(
-            self,
-            text=drop_text,
-            relief="groove",
-            borderwidth=2,
-            background="#f2f2f2",
-            foreground="#333333",
-            cursor="hand2",
-            height=4,
-            justify="center",
-        )
-        self.drop.pack(fill="x")
-        self.drop.bind("<Button-1>", lambda _event: self._choose_file())
-        _register_drop(self.drop, self._on_drop)
-
-        pick = ttk.Frame(self)
-        pick.pack(fill="x", pady=(8, 4))
-        ttk.Button(pick, text="Escolher arquivo…", command=self._choose_file).pack(side="left")
-        self.source_label = ttk.Label(pick, text="nenhum arquivo escolhido", foreground="#c0392b")
-        self.source_label.pack(side="left", padx=10)
-
-        if self.mode == MODE_SEARCH:
-            self._row("Termos (separados por vírgula):", self.terms_var)
-            self._row("Regex (opcional):", self.regex_var)
-            ttk.Checkbutton(
-                self, text="Ignorar maiúsculas/minúsculas", variable=self.case_var
-            ).pack(anchor="w", pady=(4, 0))
-            hint = "A busca mostra os resultados na hora (não vai para o banco)."
-        else:
-            hint = "As fotos são guardadas numa base local — ficam salvas entre sessões."
-        ttk.Label(self, text=hint, foreground="#666").pack(anchor="w", pady=(8, 0))
-
-        self.generate_button = ttk.Button(self, text="Gerar", command=self._generate)
-        self.generate_button.pack(pady=(8, 0))
-
-    def _row(self, label: str, variable: tk.StringVar) -> None:
-        frame = ttk.Frame(self)
-        frame.pack(fill="x", pady=(4, 0))
-        ttk.Label(frame, text=label, width=32).pack(side="left")
-        ttk.Entry(frame, textvariable=variable).pack(side="left", fill="x", expand=True)
-
-    def _choose_file(self) -> None:
-        chosen = filedialog.askopenfilename(title="Escolha o export", filetypes=_EXPORT_TYPES)
-        if chosen:
-            self._set_source(Path(chosen))
-
-    def _on_drop(self, data: str) -> None:
-        paths = self.tk.splitlist(data)
-        if paths:
-            self._set_source(Path(str(paths[0])))
-
-    def _set_source(self, path: Path) -> None:
-        self.source = path
-        self.source_label.configure(text=str(path), foreground="#1a7f37")
-
-    def _generate(self) -> None:
-        self._on_generate(self.build_request())
-
-    def build_request(self) -> _Request:
-        """Read the current widgets into a :class:`_Request`."""
-        return _Request(
-            mode=self.mode,
-            source=self.source,
-            terms=tuple(part.strip() for part in self.terms_var.get().split(",") if part.strip()),
-            regexes=(self.regex_var.get().strip(),) if self.regex_var.get().strip() else (),
-            ignore_case=bool(self.case_var.get()),
-        )
-
-    def set_busy(self, busy: bool) -> None:
-        """Enable or disable the *Gerar* button."""
-        self.generate_button.configure(state="disabled" if busy else "normal")
 
 
 class WzsearchApp:
@@ -216,43 +82,26 @@ class WzsearchApp:
         self.root.minsize(_MIN_WIDTH, _MIN_HEIGHT)
         self.log_path = log_path
         self._queue: queue.Queue[tuple[str, object]] = queue.Queue()
-        self._panels: list[_GeneratorPanel] = []
+        self._window_refreshers: list[Callable[[], None]] = []
+        self._tabs: dict[str, tk.Widget] = {}
         self.store, self._store_warning = _open_store()
         self._build_menu()
         self._build()
         self._refresh()
-        if self.store.counts()["active"]:
-            self.notebook.select(self.results)  # type: ignore[no-untyped-call]
 
+    # -- menus ------------------------------------------------------------
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
         help_menu = tk.Menu(menubar, tearoff=False)
-        help_menu.add_command(label="Como usar cada aba", command=self._show_help)
+        help_menu.add_command(label="Como usar…", command=self._show_help)
+        help_menu.add_separator()
         help_menu.add_command(label="Sobre o wzsearch", command=self._show_about)
         menubar.add_cascade(label="Ajuda", menu=help_menu)
         self.root.configure(menu=menubar)
 
     def _show_help(self) -> None:
-        """Open a scrollable window explaining every tab."""
-        window = tk.Toplevel(self.root)
-        window.title("Como usar o wzsearch")
-        window.geometry("640x560")
-        text = tk.Text(window, wrap="word", padx=14, pady=12)
-        bar = ttk.Scrollbar(window, orient="vertical", command=text.yview)
-        text.configure(yscrollcommand=bar.set)
-        bar.pack(side="right", fill="y")
-        text.pack(side="left", fill="both", expand=True)
-        text.tag_configure("title", font=("TkDefaultFont", 12, "bold"), spacing3=4)
-        text.insert("end", "wzsearch\n", "title")
-        text.insert("end", help_text.INTRO + "\n\n")
-        for title, body in help_text.SECTIONS:
-            text.insert("end", title + "\n", "title")
-            text.insert("end", body + "\n\n")
-        text.insert("end", "Dicas\n", "title")
-        for tip in help_text.TIPS:
-            text.insert("end", f"• {tip}\n")
-        text.configure(state="disabled")
-        bind_wheel_tree(text, lambda rows: text.yview_scroll(rows, "units"))
+        """Open the help window (topics on the left, content on the right)."""
+        HelpWindow(self.root, on_open_tab=self._select_tab)
 
     def _show_about(self) -> None:
         """Show a short about box."""
@@ -265,42 +114,37 @@ class WzsearchApp:
             "Python + Tkinter; roda 100% offline, sem enviar nada para a internet.",
         )
 
+    # -- construction -----------------------------------------------------
     def _build(self) -> None:
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill="both", expand=True, padx=10, pady=(10, 0))
-        for mode, title in ((MODE_PHOTOS, "Fotos"), (MODE_SEARCH, "Buscar termo")):
-            panel = _GeneratorPanel(self.notebook, mode=mode, on_generate=self._start)
-            self.notebook.add(panel, text=title)
-            self._panels.append(panel)
+        top = ttk.Frame(self.root, padding=(10, 8, 10, 0))
+        top.pack(fill="x")
+        ttk.Label(top, text="wzsearch", font=("TkDefaultFont", 12, "bold")).pack(side="left")
+        self.ajustes_summary = ttk.Label(top, text="", foreground="#666")
+        self.ajustes_summary.pack(side="right", padx=(0, 8))
+        self.ajustes = ttk.Menubutton(top, text="⚙ Ajustes")
+        ajustes_menu = tk.Menu(self.ajustes, tearoff=False)
+        ajustes_menu.add_command(label="Remetentes…", command=self._open_senders)
+        ajustes_menu.add_command(label="Lixeira…", command=self._open_trash)
+        ajustes_menu.add_separator()
+        ajustes_menu.add_command(label="Dados e backup…", command=self._open_data)
+        self.ajustes.configure(menu=ajustes_menu)
+        self.ajustes.pack(side="right")
 
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=(6, 0))
         self.results = ResultsView(
             self.notebook,
             store=self.store,
             on_status=self._set_status,
             on_changed=self._refresh,
             on_save=self._save,
+            on_import=self._import,
         )
-        self.notebook.add(self.results, text="Resultados")
-        self.senders_view = SendersView(
-            self.notebook, on_status=self._set_status, on_changed=self._refresh
-        )
-        self.notebook.add(self.senders_view, text="Remetentes")
-        self.trash = TrashView(
-            self.notebook, store=self.store, on_status=self._set_status, on_changed=self._refresh
-        )
-        self.notebook.add(self.trash, text="Lixeira")
+        self.notebook.add(self.results, text="Explorar")
         self.analytics = AnalyticsView(self.notebook)
         self.notebook.add(self.analytics, text="Análises")
-        self.data_view = DataView(
-            self.notebook,
-            data_path=self.store.path.parent,
-            on_backup=self._backup,
-            on_restore=self._restore,
-            on_wipe=self._wipe,
-        )
-        self.notebook.add(self.data_view, text="Dados")
-        for tree in (self.results.tree, self.trash.tree, self.senders_view.tree):
-            bind_wheel(tree, partial(_wheel_scroll, tree))
+        self._tabs = {"Explorar": self.results, "Análises": self.analytics}
+        bind_wheel(self.results.tree, partial(_wheel_scroll, self.results.tree))
 
         bottom = ttk.Frame(self.root, padding=(10, 6, 10, 10))
         bottom.pack(fill="x")
@@ -314,15 +158,64 @@ class WzsearchApp:
         self.summary = ttk.Label(bottom, text="")
         self.summary.pack(side="right")
 
+    def _select_tab(self, name: str) -> None:
+        """Select a notebook tab by name (used by the Help window)."""
+        widget = self._tabs.get(name)
+        if widget is not None:
+            self.notebook.select(widget)  # type: ignore[no-untyped-call]
+
+    def _new_window(self, title: str, size: str = "920x560") -> tk.Toplevel:
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.geometry(size)
+        return window
+
+    def _track(self, window: tk.Toplevel, refresh: Callable[[], None]) -> None:
+        """Keep a section window in sync while it is open."""
+
+        def run() -> None:
+            if window.winfo_exists():
+                refresh()
+
+        self._window_refreshers.append(run)
+
+    def _deleted_rows(self) -> list[dict[str, object]]:
+        deleted = [
+            row for row in self.store.rows(include_deleted=True) if row["status"] == "deleted"
+        ]
+        return senders.rename_rows(deleted)
+
+    def _open_senders(self) -> None:
+        window = self._new_window("Remetentes")
+        view = SendersView(window, on_status=self._set_status, on_changed=self._refresh)
+        view.pack(fill="both", expand=True)
+        view.show(self.store.rows())
+        self._track(window, lambda: view.show(self.store.rows()))
+
+    def _open_trash(self) -> None:
+        window = self._new_window("Lixeira")
+        view = TrashView(
+            window, store=self.store, on_status=self._set_status, on_changed=self._refresh
+        )
+        view.pack(fill="both", expand=True)
+        view.show(self._deleted_rows())
+        self._track(window, lambda: view.show(self._deleted_rows()))
+
+    def _open_data(self) -> None:
+        window = self._new_window("Dados e backup", "780x520")
+        view = DataView(
+            window,
+            data_path=self.store.path.parent,
+            on_backup=self._backup,
+            on_restore=self._restore,
+            on_wipe=self._wipe,
+        )
+        view.pack(fill="both", expand=True)
+
     # -- data -------------------------------------------------------------
     def _refresh(self) -> None:
         stored = self.store.rows()
         self.results.show(senders.rename_rows(stored))
-        self.senders_view.show(stored)
-        deleted = [
-            row for row in self.store.rows(include_deleted=True) if row["status"] == "deleted"
-        ]
-        self.trash.show(senders.rename_rows(deleted))
         self.analytics.show(senders.rename_rows(self.store.rows(only_included=True)))
         counts = self.store.counts()
         self.summary.configure(
@@ -331,39 +224,36 @@ class WzsearchApp:
                 f" · lixeira {counts['deleted']}"
             )
         )
+        senders_count = len({str(row.get("remetente", "")) for row in stored})
+        self.ajustes.configure(
+            text="⚙ Ajustes" if not counts["deleted"] else f"⚙ Ajustes ({counts['deleted']})"
+        )
+        self.ajustes_summary.configure(
+            text=f"Remetentes {senders_count} · Lixeira {counts['deleted']}"
+        )
+        for refresher in list(self._window_refreshers):
+            refresher()
 
     # -- actions ----------------------------------------------------------
-    def _start(self, request: _Request) -> None:
-        errors = validate_source(request.source)
-        if request.mode == MODE_SEARCH and not request.terms and not request.regexes:
-            errors.append("Informe pelo menos um termo ou um regex.")
-        if errors or request.source is None:
-            self._fail(" ".join(errors) or "Escolha o arquivo exportado.")
+    def _import(self, source: Path) -> None:
+        errors = validate_source(source)
+        if errors:
+            self._fail(" ".join(errors))
             return
-
         self._set_busy(True)
         self._set_status("Lendo a conversa…")
-        _LOG.info("generate mode=%s source=%s", request.mode, request.source)
-        threading.Thread(target=self._worker, args=(request,), daemon=True).start()
+        _LOG.info("import source=%s", source)
+        threading.Thread(target=self._worker, args=(source,), daemon=True).start()
         self.root.after(100, self._poll)
 
-    def _worker(self, request: _Request) -> None:
-        source = request.source
-        if source is None:
-            return
+    def _worker(self, source: Path) -> None:
         try:
-            if request.mode == MODE_PHOTOS:
-                self._queue.put(("imported", import_photos([source], self.store)))
-            else:
-                rows = collect_search(
-                    [source], request.terms, request.regexes, ignore_case=request.ignore_case
-                )
-                self._queue.put(("rows", rows))
+            self._queue.put(("imported", import_photos([source], self.store)))
         except WzsearchError as exc:
-            _LOG.warning("generation error: %s", exc)
+            _LOG.warning("import error: %s", exc)
             self._queue.put(("error", str(exc)))
         except Exception as exc:  # surface any unexpected failure to the user
-            _LOG.exception("unexpected generation failure")
+            _LOG.exception("unexpected import failure")
             self._queue.put(("error", f"Erro inesperado: {exc}"))
 
     def _poll(self) -> None:
@@ -375,12 +265,7 @@ class WzsearchApp:
         self._set_busy(False)
         if kind == "imported" and isinstance(payload, ImportResult):
             self._refresh()
-            self.notebook.select(self.results)  # type: ignore[no-untyped-call]
             self._set_status(f"{payload.added} nova(s) no banco · {payload.skipped} já estavam lá.")
-        elif kind == "rows" and isinstance(payload, list):
-            self.results.show(payload)
-            self.notebook.select(self.results)  # type: ignore[no-untyped-call]
-            self._set_status(f"{len(payload)} ocorrência(s). Use Salvar CSV para exportar.")
         else:
             self._fail(str(payload))
 
@@ -398,18 +283,13 @@ class WzsearchApp:
         if not chosen:
             return
         try:
-            destination = Path(chosen)
-            if "id" in rows[0]:  # stored rows: plain export of the current view
-                with destination.open("w", encoding="utf-8-sig", newline="") as handle:
-                    write_rows(rows, handle, DB_COLUMNS)
-                self._set_status(f"{len(rows)} linha(s) salva(s) em {chosen}")
-            else:
-                result = save_rows([dict(row) for row in rows], MODE_SEARCH, destination)
-                self._set_status(f"{result.added} linha(s) salva(s) em {chosen}")
-        except (WzsearchError, OSError) as exc:
+            with Path(chosen).open("w", encoding="utf-8-sig", newline="") as handle:
+                write_rows(rows, handle, DB_COLUMNS)
+        except OSError as exc:
             self._fail(str(exc))
-        else:
-            _LOG.info("saved %s rows to %s", len(rows), chosen)
+            return
+        self._set_status(f"{len(rows)} linha(s) salva(s) em {chosen}")
+        _LOG.info("saved %s rows to %s", len(rows), chosen)
 
     # -- helpers ----------------------------------------------------------
     def _backup(self) -> None:
@@ -477,8 +357,7 @@ class WzsearchApp:
             self.progress.start(12)
         else:
             self.progress.stop()
-        for panel in self._panels:
-            panel.set_busy(busy)
+        self.results.set_busy(busy)
 
     def _set_status(self, message: str, *, ok: bool = True) -> None:
         self.status.configure(text=message, foreground="#1a7f37" if ok else "#c0392b")
