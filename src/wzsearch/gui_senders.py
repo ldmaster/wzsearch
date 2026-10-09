@@ -36,6 +36,8 @@ class SendersView(ttk.Frame):
         self._build()
 
     def _build(self) -> None:
+        self.count_label = ttk.Label(self, font=("TkDefaultFont", 11, "bold"))
+        self.count_label.pack(anchor="w", pady=(0, 4))
         hint = (
             "Dê um nome para quem aparece como número (ex.: +55 11 9…). "
             "O nome passa a valer na aba Resultados e nas Análises."
@@ -70,6 +72,8 @@ class SendersView(ttk.Frame):
         """List the distinct senders found in ``rows`` with their photo counts."""
         counts = Counter(str(row.get("remetente", "") or "(sem remetente)") for row in rows)
         names = senders.load_names()
+        named = sum(1 for sender in counts if names.get(sender))
+        self.count_label.configure(text=f"{len(counts)} remetente(s) no total · {named} com nome")
         self.tree.delete(*self.tree.get_children())
         self._senders = {}
         for index, (sender, count) in enumerate(counts.most_common()):
