@@ -31,6 +31,10 @@ mais ambicioso — com o que muda, o ganho, o custo e um esboço.
   (campo de busca no topo, com um modo "regex").
 - Importar é uma ação dessa tela (arrastar/botão), não uma tela própria.
 - Os chamados "Resultados" *são* a lista.
+- **Onde fica a lixeira?** Na gaveta **⚙ Ajustes**, junto com Remetentes e Dados —
+  é aqui que a Ideia 1 se apoia na Ideia 2. A lista mostra só o que está ativo;
+  excluir tira a linha da lista e manda para a lixeira, com **desfazer** imediato
+  (e o contador da gaveta sobe).
 
 **Ganho:** sai de 3 abas para 1; o conceito "buscar" e "listar" viram o mesmo.
 **Custo:** a busca hoje não grava no banco; passaria a filtrar ao vivo (ou a gravar

@@ -167,12 +167,25 @@
         <ul>
           <li><b>Digite</b> abaixo: a lista filtra na hora (experimente <code>bolo</code> ou marque <i>regex</i> e use <code>\d{4}</code>).</li>
           <li class="good">Ganho: sai de 3 abas para 1; buscar e listar viram a mesma coisa.</li>
+          <li><b>Lixeira, Remetentes e Dados</b> ficam na gaveta <b>⚙ Ajustes</b> (veja o botão no canto) — a lista mostra só o que está ativo. Selecione uma linha e clique em <b>Excluir</b> para ver o item sair da lista e o contador da lixeira subir (com <b>desfazer</b>).</li>
           <li>Custo: a busca deixa de ser uma tela separada e passa a ser um filtro.</li>
         </ul>
       </div>
       <div class="mock">
         <div class="bar"><span class="dots"><i></i><i></i><i></i></span><b>wzsearch — Explorar</b></div>
-        <div class="tabbar"><span class="on">Explorar</span><span>Análises</span></div>
+        <div class="tabbar" style="justify-content:space-between">
+          <span style="border:none;background:transparent">
+            <span class="on">Explorar</span>&nbsp;<span>Análises</span>
+          </span>
+          <span class="drawer" id="d1" style="border:none;background:transparent">
+            <button class="btn" id="g1">⚙ Ajustes ▾</button>
+            <span class="panelbox">
+              <span class="item">Remetentes <span class="count">20</span></span>
+              <span class="item">Lixeira <span class="count" id="trash1">3</span></span>
+              <span class="item">Dados / backup <span class="count">2,4 MB</span></span>
+            </span>
+          </span>
+        </div>
         <div class="pane">
           <div class="drop">Arraste o export do WhatsApp (.zip/.txt) aqui &nbsp;ou&nbsp; <button class="btn">Escolher arquivo…</button></div>
           <div class="row">
@@ -183,6 +196,11 @@
             <span class="muted" id="c1"></span>
           </div>
           <div class="chips" id="chips1"></div>
+          <div class="row">
+            <button class="btn" id="del1" disabled>Excluir (lixeira)</button>
+            <span class="chips" id="undo1"></span>
+            <span class="muted" style="margin-left:auto">a lixeira fica em ⚙ Ajustes</span>
+          </div>
           <div class="two" style="margin-top:10px">
             <div class="left scroll">
               <table id="t1">
@@ -324,13 +342,14 @@
   // Ideia 1: filtro ao vivo
   const q1 = document.getElementById('q1'), re1 = document.getElementById('re1');
   const s1 = document.getElementById('s1'), rows1 = [...document.querySelectorAll('#t1 tbody tr')];
+  function live1(){ return rows1.filter(tr => tr.isConnected); }
   function filter1(){
     const term = q1.value.trim();
     const sender = s1.value;
     let rx = null;
     if (term && re1.checked){ try { rx = new RegExp(term, 'i'); } catch(e){ rx = null; } }
     let shown = 0;
-    rows1.forEach(tr => {
+    live1().forEach(tr => {
       const text = tr.innerText;
       const okTerm = !term || (rx ? rx.test(text) : text.toLowerCase().includes(term.toLowerCase()));
       const okSender = sender === '(todos)' || tr.dataset.sender === sender;
@@ -338,14 +357,46 @@
       tr.style.display = ok ? '' : 'none';
       if (ok) shown++;
     });
+    const total = live1().length;
     const regexChip = (term && re1.checked) ? `<span class="chip">regex: <b>${term.replace(/</g,'&lt;')}</b> ✕</span>` : '';
     document.getElementById('chips1').innerHTML = regexChip;
-    document.getElementById('c1').textContent = `${shown} de ${rows1.length} linha(s)`;
-    document.getElementById('st1').textContent = `${shown} de ${rows1.length} linha(s)`;
+    document.getElementById('c1').textContent = `${shown} de ${total} linha(s)`;
+    document.getElementById('st1').textContent = `${shown} de ${total} linha(s)`;
   }
   [q1, s1].forEach(el => el.addEventListener('input', filter1));
   re1.addEventListener('change', filter1);
   filter1();
+
+  // Ideia 1 extra: gaveta de ajustes + excluir para a lixeira (com desfazer)
+  document.getElementById('g1').addEventListener('click', () => document.getElementById('d1').classList.toggle('open'));
+  const del1 = document.getElementById('del1'), undo1 = document.getElementById('undo1');
+  const trash1 = document.getElementById('trash1');
+  const tbody1 = document.querySelector('#t1 tbody');
+  let trashCount = 3, undoRows = [];
+  const selected1 = () => live1().filter(tr => tr.classList.contains('sel'));
+  rows1.forEach(tr => tr.addEventListener('click', () => {
+    tr.classList.toggle('sel');
+    del1.disabled = selected1().length === 0;
+  }));
+  del1.addEventListener('click', () => {
+    undoRows = selected1();
+    if (!undoRows.length) return;
+    undoRows.forEach(tr => { tr.classList.remove('sel'); tr.remove(); });
+    trashCount += undoRows.length;
+    trash1.textContent = trashCount;
+    undo1.innerHTML = `<span class="chip" id="undobtn">${undoRows.length} na lixeira — desfazer ✕</span>`;
+    document.getElementById('undobtn').addEventListener('click', () => {
+      undoRows.forEach(tr => tbody1.appendChild(tr));
+      trashCount -= undoRows.length;
+      trash1.textContent = trashCount;
+      undoRows = [];
+      undo1.innerHTML = '';
+      del1.disabled = true;
+      filter1();
+    });
+    del1.disabled = true;
+    filter1();
+  });
 
   // Ideia 2: gaveta
   const d2 = document.getElementById('d2');
