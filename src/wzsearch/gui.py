@@ -16,6 +16,7 @@ import tkinter as tk
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -35,6 +36,7 @@ from .pipeline import (
     import_photos,
     save_rows,
 )
+from .scroll import bind_wheel
 from .store import Store
 from .writer import DB_COLUMNS, write_rows
 
@@ -47,6 +49,11 @@ except ImportError:  # pragma: no cover - the button still works without it
 _LOG = logging.getLogger("wzsearch.gui")
 
 _EXPORT_TYPES = [("Export do WhatsApp", "*.zip *.txt"), ("Todos os arquivos", "*.*")]
+
+
+def _wheel_scroll(tree: ttk.Treeview, rows: int) -> None:
+    """Scroll a tree by ``rows`` (used as the wheel callback)."""
+    tree.yview_scroll(rows, "units")
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +247,8 @@ class WzsearchApp:
             on_wipe=self._wipe,
         )
         self.notebook.add(self.data_view, text="Dados")
+        for tree in (self.results.tree, self.trash.tree, self.senders_view.tree):
+            bind_wheel(tree, partial(_wheel_scroll, tree))
 
         bottom = ttk.Frame(self.root, padding=(10, 6, 10, 10))
         bottom.pack(fill="x")
