@@ -145,6 +145,11 @@ O programa **não** copia, move nem envia mídia. Apenas referencia o nome do
 arquivo, o tipo e se ele existe no export. Testes usam fixtures sintéticas —
 nenhuma conversa real.
 
+A única conexão que o programa faz é a **consulta de versão** ao GitHub (veja
+[Atualizações](#atualizações)), e ela pode ser desligada em `⚙ Ajustes →
+Atualizações…`. Nada sobre as conversas — mensagens, fotos, nomes, números — é
+enviado para lugar nenhum.
+
 ## Baixar o executável (sem instalar Python)
 
 Os binários ficam nas **Releases** do repositório — baixáveis por qualquer pessoa,
@@ -160,14 +165,50 @@ descontinuados. O CLI continua disponível para quem instala o pacote com `pip`/
 Para gerar uma nova release, crie e envie uma tag:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.9.0
+git push origin v0.9.0
 ```
 
-O workflow compila os binários, empacota e anexa os zips ao Release. O binário do
-macOS é *best-effort*: os runners arm64 do GitHub são limitados por capacidade e o
-job pode nem iniciar (sem quebrar a release). No macOS, o binário não é assinado —
-se o Gatekeeper reclamar, use `xattr -d com.apple.quarantine wzsearch`.
+O workflow compila **o executável do Windows**, assina (veja
+[Assinatura](#assinatura)) e anexa o zip ao Release. O app do macOS é construído
+**apenas localmente** (`./scripts/build_macos.sh`) e não vai para o Release.
+
+## Atualizações
+
+Ao abrir, o app pergunta ao GitHub qual é a última versão e, se houver novidade,
+aparece uma **faixa no topo** da janela com **Atualizar agora**, **Ver novidades** e
+um **✕** que dispensa aquela versão. Em `⚙ Ajustes → Atualizações…` dá para desligar
+a checagem ou verificar na hora (o mesmo vale pelo menu **Ajuda → Verificar
+atualizações…**).
+
+Quando o botão atualiza, o app baixa o zip do Release, confere a **assinatura digital
+do executável** e a versão gravada nele, e só então troca o arquivo — por um script
+auxiliar, porque o Windows não deixa sobrescrever um `.exe` em execução. O app fecha
+e volta já na versão nova; se algo falhar, ele restaura a versão anterior.
+
+Regras que valem a pena saber:
+
+- **Nada é instalado sem assinatura válida** (falha fechada). Enquanto o certificado
+  não estiver ativo, a faixa só oferece *Baixar* e leva ao Release.
+- Só aceita versão **mais nova** que a instalada (evita "atualizar" para uma versão
+  antiga com falha conhecida).
+- O updater só existe no **Windows**: no macOS a checagem nem chega a acontecer.
+- A consulta de versão é a **única conexão** que o programa faz. Nada sobre as
+  conversas (mensagens, fotos, nomes) sai da máquina.
+
+## Assinatura
+
+O `.exe` publicado é assinado via **[SignPath Foundation](https://signpath.org/)**
+(certificado para projetos open source, com a chave privada em HSM do lado deles), o
+que também remove o aviso do SmartScreen. A assinatura é a nativa do Windows
+(*Authenticode*), gravada dentro do próprio PE — não há arquivo extra no Release.
+
+Do lado do app, a verificação exige que a assinatura seja válida **e** do publicador
+esperado; um executável assinado por outra entidade é recusado.
+
+Enquanto a SignPath não emite o certificado, o workflow **não falha**: ele detecta a
+ausência das credenciais, empacota sem assinatura e o app passa a apenas avisar da
+versão nova.
 
 ## Tela gráfica (GUI)
 
@@ -189,10 +230,12 @@ Duas abas de trabalho + menus:
   um **filtro no topo** mostra o **geral** ou **por remetente**.
 - **⚙ Ajustes** (canto superior direito) — **Remetentes** (dar nome a quem aparece como
   número; o nome vale na lista, nos filtros e nas Análises), **Lixeira** (restaurar ou
-  excluir de vez) e **Dados e backup** (backup num `.zip`, restaurar, apagar tudo).
+  excluir de vez), **Atualizações** (ligar/desligar a checagem e verificar na hora) e
+  **Dados e backup** (backup num `.zip`, restaurar, apagar tudo).
 - **Menu Ajuda** — *Como usar…* abre uma janela com **tópicos** à esquerda (Começando,
   Explorar, Análises, Remetentes, Lixeira, Dados, Privacidade), conteúdo formatado à
-  direita e um botão que leva direto para a aba. *Sobre o wzsearch* mostra versão e autor.
+  direita e um botão que leva direto para a aba. *Verificar atualizações…* consulta na
+  hora e *Sobre o wzsearch* mostra versão e autor.
 
 Ideias de evolução da interface estão em [`docs/ui-ideias.md`](docs/ui-ideias.md) e os
 protótipos clicáveis em [`docs/ui-prototipos.html`](docs/ui-prototipos.html).
@@ -277,11 +320,15 @@ Sem build, direto do código (testar mais rápido):
 Observações:
 
 - Os binários gerados rodam só na **arquitetura desta máquina** (arm64). Para
-  Apple Intel, gere num Mac Intel (ou via CI com `macos-13`).
+  Apple Intel, gere num Mac Intel.
 - Binários copiados/baixados levam a marca de quarentena do Gatekeeper; se
   reclamar, rode `xattr -d com.apple.quarantine dist/wzsearch.app`.
 - Alternativa ao `uv`: `brew install python-tk@3.12` instala o Tkinter no Python
   do Homebrew e o `.venv` normal passa a rodar a GUI.
+- Para gerar o `.exe` no Windows, rode antes
+  `python scripts/make_version_info.py` (ele escreve `packaging/version_info.txt`,
+  que não vai para o repositório) e use `--version-file packaging/version_info.txt`:
+  é essa versão que o updater lê do executável assinado.
 
 
 
