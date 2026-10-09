@@ -36,11 +36,11 @@ def render(size: int = SIZE) -> Image.Image:
     # rounded square with a subtle vertical gradient
     top_teal = Image.new("RGB", (size, size), (32, 158, 143))
     bottom_teal = Image.new("RGB", (size, size), (9, 92, 83))
-    background = Image.composite(bottom_teal, top_teal, Image.linear_gradient("L").resize((size, size)))
-    rounded = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(rounded).rounded_rectangle(
-        (0, 0, size - 1, size - 1), radius=px(0.22), fill=255
+    background = Image.composite(
+        bottom_teal, top_teal, Image.linear_gradient("L").resize((size, size))
     )
+    rounded = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(rounded).rounded_rectangle((0, 0, size - 1, size - 1), radius=px(0.22), fill=255)
     image.paste(background, (0, 0), rounded)
 
     # photo card
@@ -83,8 +83,12 @@ def render(size: int = SIZE) -> Image.Image:
     draw = ImageDraw.Draw(image)
     draw.ellipse(box, outline=_CARD, width=px(0.032))
     draw.line(
-        (center_x + radius * 0.70, center_y + radius * 0.70,
-         center_x + radius * 1.32, center_y + radius * 1.32),
+        (
+            center_x + radius * 0.70,
+            center_y + radius * 0.70,
+            center_x + radius * 1.32,
+            center_y + radius * 1.32,
+        ),
         fill=_CARD,
         width=px(0.05),
     )
