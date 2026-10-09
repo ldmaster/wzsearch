@@ -91,6 +91,10 @@ class Store:
         self.path = Path(path) if path is not None else default_db_path()
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn: sqlite3.Connection
+        self._connect()
+
+    def _connect(self) -> None:
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
@@ -99,6 +103,17 @@ class Store:
     def close(self) -> None:
         """Close the underlying connection."""
         self._conn.close()
+
+    def reopen(self) -> None:
+        """Reconnect to the same file (after a restore replaced it)."""
+        self._conn.close()
+        self._connect()
+
+    def clear_all(self) -> int:
+        """Delete every record and return how many were removed."""
+        cursor = self._conn.execute("DELETE FROM photos")
+        self._conn.commit()
+        return cursor.rowcount
 
     def add_rows(
         self, rows: Iterable[Mapping[str, object]], *, media: Mapping[str, bytes] | None = None

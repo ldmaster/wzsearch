@@ -15,12 +15,14 @@ import threading
 import tkinter as tk
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import senders
+from . import backup, senders
 from .avatars import config_dir
 from .gui_analytics import AnalyticsView
+from .gui_data import DataView
 from .gui_results import ResultsView, TrashView
 from .gui_senders import SendersView
 from .images import HEIF_AVAILABLE, PILLOW_AVAILABLE
@@ -230,6 +232,14 @@ class WzsearchApp:
         self.notebook.add(self.trash, text="Lixeira")
         self.analytics = AnalyticsView(self.notebook)
         self.notebook.add(self.analytics, text="Análises")
+        self.data_view = DataView(
+            self.notebook,
+            data_path=self.store.path.parent,
+            on_backup=self._backup,
+            on_restore=self._restore,
+            on_wipe=self._wipe,
+        )
+        self.notebook.add(self.data_view, text="Dados")
 
         bottom = ttk.Frame(self.root, padding=(10, 6, 10, 10))
         bottom.pack(fill="x")
@@ -341,6 +351,66 @@ class WzsearchApp:
             _LOG.info("saved %s rows to %s", len(rows), chosen)
 
     # -- helpers ----------------------------------------------------------
+    def _backup(self) -> None:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        chosen = filedialog.asksaveasfilename(
+            title="Salvar backup",
+            defaultextension=".zip",
+            initialfile=f"wzsearch-backup-{stamp}.zip",
+            filetypes=[("Backup do wzsearch", "*.zip")],
+        )
+        if not chosen:
+            return
+        try:
+            path = backup.backup_zip(Path(chosen))
+        except OSError as exc:
+            self._fail(f"não foi possível criar o backup: {exc}")
+            return
+        self._set_status(f"Backup salvo em {path}")
+        _LOG.info("backup written to %s", path)
+
+    def _restore(self) -> None:
+        chosen = filedialog.askopenfilename(
+            title="Escolher backup", filetypes=[("Backup do wzsearch", "*.zip")]
+        )
+        if not chosen:
+            return
+        confirmed = messagebox.askyesno(
+            "Restaurar backup",
+            "Restaurar este backup?\n\nOs dados atuais serão substituídos.",
+        )
+        if not confirmed:
+            return
+        try:
+            self.store.close()
+            restored = backup.restore_zip(Path(chosen))
+        except (OSError, ValueError) as exc:
+            self.store.reopen()
+            self._fail(f"não foi possível restaurar: {exc}")
+            return
+        self.store.reopen()
+        self.results.reset_caches()
+        self._refresh()
+        self._set_status(f"Backup restaurado ({', '.join(restored)}).")
+        _LOG.info("restored %s", restored)
+
+    def _wipe(self) -> None:
+        confirmed = messagebox.askyesno(
+            "Apagar todos os dados",
+            "Apagar TODOS os dados?\n\n"
+            "Isto remove as fotos registradas, os nomes de remetentes e os avatares.\n"
+            "Não dá para desfazer (faça um backup antes, se precisar).",
+            icon="warning",
+        )
+        if not confirmed:
+            return
+        removed = self.store.clear_all()
+        backup.clear_all_data()
+        self.results.reset_caches()
+        self._refresh()
+        self._set_status(f"Todos os dados foram apagados ({removed} registro(s)).")
+        _LOG.info("wiped all data (%s records)", removed)
+
     def _set_busy(self, busy: bool) -> None:
         if busy:
             self.progress.start(12)

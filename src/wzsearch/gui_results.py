@@ -13,9 +13,13 @@ from .analytics import filter_rows
 from .store import Store
 
 _PREVIEW_BOX = 260
+_PREVIEW_PAD = 12
+_PREVIEW_SIDE = _PREVIEW_BOX + _PREVIEW_PAD * 2
 _AVATAR_BOX = 44
 _VIEWER_BOX = 900
 _ALL_SENDERS = "(todos)"
+_CELL_TEXT = 60
+_PREVIEW_DELAY_MS = 60
 
 #: Row fields shown in the side panel (never the media blob).
 _DETAIL_KEYS = (
@@ -36,18 +40,14 @@ _DETAIL_KEYS = (
     "status",
 )
 
-#: (column key, heading, width, anchor)
+#: (column key, heading, width, anchor). Kept few: the Treeview repaints every
+#: scroll and the cost grows with the column count; the rest lives in the side panel.
 _DISPLAY_COLUMNS: tuple[tuple[str, str, int, Literal["w", "center"]], ...] = (
     ("incluido", "Incluído", 70, "center"),
-    ("remetente", "Remetente", 150, "w"),
-    ("telefone_remetente", "Telefone", 130, "w"),
+    ("remetente", "Remetente", 170, "w"),
     ("data", "Data", 90, "w"),
-    ("hora", "Hora", 70, "w"),
-    ("legenda", "Legenda", 220, "w"),
-    ("contexto_provavel", "Contexto provável", 200, "w"),
-    ("foto_arquivo", "Arquivo", 200, "w"),
-    ("foto_existe", "Tem arquivo", 80, "center"),
-    ("midia_pendente", "Pendente", 70, "center"),
+    ("legenda", "Legenda", 300, "w"),
+    ("foto_arquivo", "Arquivo", 220, "w"),
 )
 
 
@@ -61,7 +61,8 @@ class StatusSink(Protocol):
 def _cell(row: Mapping[str, Any], column: str) -> str:
     if column == "incluido":
         return "☑" if row.get("incluir") else "☐"
-    return str(row.get(column, "") or "")
+    text = str(row.get(column, "") or "")
+    return text if len(text) <= _CELL_TEXT else text[:_CELL_TEXT] + "…"
 
 
 class ResultsView(ttk.Frame):
@@ -88,6 +89,8 @@ class ResultsView(ttk.Frame):
         self._avatar: Any = None
         self._viewer: Any = None
         self._preview_id: int | None = None
+        self._preview_job: str | None = None
+        self._preview_cache: dict[int, Any] = {}
         self._avatar_cache: dict[str, Any] = {}
         self._build()
 
@@ -152,8 +155,14 @@ class ResultsView(ttk.Frame):
         self.avatar_label.pack(anchor="w")
         self.sender_label = ttk.Label(side, text="—", font=("TkDefaultFont", 11, "bold"))
         self.sender_label.pack(anchor="w", pady=(4, 6))
-        self.photo_label = tk.Label(side, text="(sem foto)", background="#f2f2f2")
-        self.photo_label.pack(fill="x")
+        self.photo_canvas = tk.Canvas(
+            side,
+            width=_PREVIEW_SIDE,
+            height=_PREVIEW_SIDE,
+            background="#f2f2f2",
+            highlightthickness=0,
+        )
+        self.photo_canvas.pack()
         buttons = ttk.Frame(side)
         buttons.pack(fill="x", pady=6)
         ttk.Button(buttons, text="Definir foto do contato…", command=self._choose_avatar).pack(
@@ -181,6 +190,12 @@ class ResultsView(ttk.Frame):
     def exportable(self) -> list[Mapping[str, Any]]:
         """Rows currently visible (used by Salvar CSV)."""
         return self._visible_rows()
+
+    def reset_caches(self) -> None:
+        """Drop decoded previews and avatars (after data was replaced/erased)."""
+        self._preview_cache.clear()
+        self._avatar_cache.clear()
+        self._preview_id = None
 
     def _visible_rows(self) -> list[Mapping[str, Any]]:
         sender = self.sender_var.get()
@@ -253,23 +268,29 @@ class ResultsView(ttk.Frame):
         self._on_status(f"{len(ids)} linha(s) movida(s) para a lixeira.")
 
     def _show_preview(self) -> None:
+        """Schedule the preview (debounced so fast navigation stays smooth)."""
+        if self._preview_job is not None:
+            self.after_cancel(self._preview_job)
+        self._preview_job = self.after(_PREVIEW_DELAY_MS, self._render_preview)
+
+    def _render_preview(self) -> None:
+        self._preview_job = None
         row = self._selected_row()
         if row is None:
             return
         row_id = int(row["id"]) if self._db_backed and row.get("id") is not None else None
         sender = self._sender(row)
         self.sender_label.configure(text=sender or "(sem remetente)")
-        self._avatar = self._render(self.avatar_label, self._avatar_image(sender), "")
+        self._render(self.avatar_label, self._avatar_image(sender), "")
 
         if row_id != self._preview_id:
-            data = self._store.media(row_id) if row_id is not None else None
-            image = images.image_from_bytes(data, _PREVIEW_BOX)
+            photo = self._cached_photo(row_id)
             missing = (
                 "(mídia pendente — sem arquivo)"
                 if not row.get("foto_arquivo")
                 else "(imagem indisponível)"
             )
-            self._image = self._render(self.photo_label, image, missing)
+            self._draw_photo(photo, missing)
             self._preview_id = row_id
 
         lines = "\n".join(f"{key}: {row.get(key, '')}" for key in _DETAIL_KEYS if key in row)
@@ -277,6 +298,32 @@ class ResultsView(ttk.Frame):
         self.details.delete("1.0", "end")
         self.details.insert("1.0", lines)
         self.details.configure(state="disabled")
+
+    def _cached_photo(self, row_id: int | None) -> Any:
+        if row_id is None or not self._db_backed:
+            return None
+        if row_id not in self._preview_cache:
+            image = images.image_from_bytes(self._store.media(row_id), _PREVIEW_BOX)
+            self._preview_cache[row_id] = images.to_photoimage(image)
+            if len(self._preview_cache) > 40:
+                self._preview_cache.clear()
+        return self._preview_cache[row_id]
+
+    def _draw_photo(self, photo: Any, fallback: str) -> None:
+        canvas = self.photo_canvas
+        canvas.delete("all")
+        if photo is None:
+            canvas.create_text(
+                _PREVIEW_SIDE / 2,
+                _PREVIEW_SIDE / 2,
+                text=fallback,
+                fill="#666",
+                width=_PREVIEW_BOX,
+            )
+            self._image = None
+            return
+        canvas.create_image(_PREVIEW_SIDE / 2, _PREVIEW_SIDE / 2, image=photo)
+        self._image = photo
 
     def _avatar_image(self, sender: str) -> Any:
         if sender not in self._avatar_cache:

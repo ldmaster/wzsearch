@@ -187,6 +187,8 @@ Quatro abas:
 - **Remetentes** — dá um **nome** para quem aparece como número (ex.: `+55 11 9…` →
   "Ana"). O nome passa a valer na tabela de Resultados, no filtro e nas Análises.
 - **Lixeira** — o que foi excluído, com **Restaurar** e **Excluir definitivamente**.
+- **Dados** — **Fazer backup de todos os dados…** (um `.zip` com o banco, os nomes e os
+  avatares), **Restaurar backup…** e **Apagar todos os dados** (irreversível).
 - **Análises** — frequência de postagem: total/mídias pendentes, período, **tabela por
   remetente** (fotos, %, com arquivo, pendentes, dias ativos, 1ª e última foto),
   **mapa de calor dia da semana × hora** ("quando postam"), picos (hora/dia/mês mais
@@ -205,9 +207,10 @@ Um único arquivo SQLite com as fotos embutidas, na pasta de dados oculta do sis
 - Windows: `%APPDATA%\wzsearch\wzsearch.db`
 - Linux: `~/.local/share/wzsearch/wzsearch.db`
 
-A pasta guarda também os avatares e o `wzsearch.log`. O banco é dado pessoal local —
-nada sai da máquina; use a **Lixeira → Excluir definitivamente** para apagar o que não
-quiser manter. O CLI também importa para a base: `wzsearch export.zip --photos --db base.db`.
+A pasta guarda também os avatares, os nomes de remetentes e o `wzsearch.log`. O banco é
+dado pessoal local — nada sai da máquina; use a aba **Dados** para **backup** (um `.zip`
+com tudo), **restaurar** ou **apagar todos os dados**. O CLI também importa para a base:
+`wzsearch export.zip --photos --db base.db`.
 
 As fotos são lidas **do zip direto para a memória** (nada é extraído para o disco).
 Formatos de imagem: `jpg`, `png`, `webp`, `gif` e **`heic`/`heif`** (fotos de iPhone,
