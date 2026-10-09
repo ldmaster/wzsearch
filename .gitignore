@@ -11,3 +11,6 @@ dist/
 *.csv
 .commandcode/
 .DS_Store
+packaging/version_info.txt
+*.key
+signing-key*

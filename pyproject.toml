@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wzsearch"
-version = "0.8.1"
+dynamic = ["version"]
 description = "Search an exported WhatsApp conversation for keywords/regex and emit an occurrences CSV."
 authors = [{ name = "ldmaster" }]
 readme = "README.md"
@@ -21,6 +21,9 @@ wzsearch = "wzsearch.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wzsearch"]
+
+[tool.hatch.version]
+path = "src/wzsearch/__init__.py"
 
 [tool.ruff]
 line-length = 100

@@ -9,17 +9,20 @@ the window keeps responding while a progress bar shows.
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import sys
 import threading
+import time
 import tkinter as tk
+import webbrowser
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import __version__, backup, senders
+from . import __version__, backup, senders, settings, update
 from .avatars import config_dir
 from .dnd import TkinterDnD, dnd_available
 from .gui_analytics import AnalyticsView
@@ -27,7 +30,10 @@ from .gui_data import DataView
 from .gui_help import HelpWindow
 from .gui_results import ResultsView, TrashView
 from .gui_senders import SendersView
+from .gui_update import UpdateBanner, UpdateProgress
+from .gui_updates import UpdatesView
 from .images import HEIF_AVAILABLE, PILLOW_AVAILABLE
+from .paths import data_dir
 from .pipeline import (
     MODE_PHOTOS,
     ImportResult,
@@ -94,10 +100,15 @@ class WzsearchApp:
         self._queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._window_refreshers: list[Callable[[], None]] = []
         self._tabs: dict[str, tk.Widget] = {}
+        self._checking = False
+        self._release: update.Release | None = None
+        self._updates_view: UpdatesView | None = None
+        self._update_target: Path | None = None
         self.store, self._store_warning = _open_store()
         self._build_menu()
         self._build()
         self._refresh()
+        self.root.after(1500, self.check_updates)
 
     # -- menus ------------------------------------------------------------
     def _build_menu(self) -> None:
@@ -105,6 +116,7 @@ class WzsearchApp:
         help_menu = tk.Menu(menubar, tearoff=False)
         help_menu.add_command(label="Como usar…", command=self._show_help)
         help_menu.add_separator()
+        help_menu.add_command(label="Verificar atualizações…", command=self._check_manually)
         help_menu.add_command(label="Sobre o wzsearch", command=self._show_about)
         menubar.add_cascade(label="Ajuda", menu=help_menu)
         self.root.configure(menu=menubar)
@@ -121,7 +133,8 @@ class WzsearchApp:
             "Lê uma conversa exportada do WhatsApp e mostra as fotos do chat "
             "com estatísticas.\n\n"
             f"Feito por {_AUTHOR}.\n{_REPO_URL}\n\n"
-            "Python + Tkinter; roda 100% offline, sem enviar nada para a internet.",
+            "Python + Tkinter. O conteúdo das suas conversas não sai da máquina: a única "
+            "conexão é a checagem de atualização, que pode ser desligada em Ajustes.",
         )
 
     # -- construction -----------------------------------------------------
@@ -136,9 +149,19 @@ class WzsearchApp:
         ajustes_menu.add_command(label="Remetentes…", command=self._open_senders)
         ajustes_menu.add_command(label="Lixeira…", command=self._open_trash)
         ajustes_menu.add_separator()
+        ajustes_menu.add_command(label="Atualizações…", command=self._open_updates)
         ajustes_menu.add_command(label="Dados e backup…", command=self._open_data)
         self.ajustes.configure(menu=ajustes_menu)
         self.ajustes.pack(side="right")
+
+        self._update_target = update.update_target()
+        self.banner = UpdateBanner(
+            self.root,
+            installable=self._can_install(),
+            on_action=self._start_update,
+            on_notes=self._open_notes,
+            on_dismiss=self._dismiss_update,
+        )
 
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True, padx=10, pady=(6, 0))
@@ -188,6 +211,125 @@ class WzsearchApp:
         widget = self.root.winfo_containing(self.root.winfo_pointerx(), self.root.winfo_pointery())
         if widget is not None and _is_inside(widget, self.analytics):
             self.analytics.scroll(rows)
+
+    # -- atualizações -----------------------------------------------------
+    def _can_install(self) -> bool:
+        """Whether this build is able to replace its own executable."""
+        target = self._update_target
+        return target is not None and update.can_swap(target)
+
+    def _check_manually(self) -> None:
+        """Look for updates when the user asks (Ajuda → Verificar atualizações…)."""
+        self.check_updates(manual=True)
+
+    def check_updates(self, *, manual: bool = False) -> None:
+        """Ask GitHub for the newest release, without blocking the window."""
+        if self._checking:
+            return
+        if self._update_target is not None:
+            update.cleanup_previous(self._update_target)
+        if not sys.platform.startswith("win"):
+            if manual:
+                self._report_updates(
+                    "Esta build não se atualiza sozinha — por enquanto o updater é só do Windows."
+                )
+                self._set_status("Atualização automática disponível só no Windows.")
+            return
+        if not manual and not settings.load().check_updates:
+            return
+        self._checking = True
+        if manual:
+            self._set_status("Verificando atualizações…")
+            self._report_updates("Consultando o GitHub…")
+        url = os.environ.get(update.ENV_API, update.API_LATEST)
+        threading.Thread(target=self._check_worker, args=(url, manual), daemon=True).start()
+        self.root.after(80, self._poll)
+
+    def _check_worker(self, url: str, manual: bool) -> None:
+        self._queue.put(("release", (update.fetch_latest(url=url), manual)))
+
+    def _report_updates(self, message: str, *, ok: bool = True) -> None:
+        """Write the outcome in the Ajustes → Atualizações panel, when open."""
+        view = self._updates_view
+        if view is not None and view.winfo_exists():
+            view.show_result(message, ok=ok)
+
+    def _on_release(self, release: update.Release | None, *, manual: bool) -> None:
+        self._checking = False
+        stored = settings.load()
+        stored.last_check = time.time()
+        settings.save(stored)
+        if release is None:
+            if manual:
+                self._set_status("Nenhuma versão nova por enquanto.")
+                self._report_updates(
+                    "Nenhuma versão nova — ou não foi possível consultar o GitHub agora."
+                )
+            return
+        self._release = release
+        self._report_updates(f"Nova versão {release.version} disponível.")
+        if not manual and stored.skipped_version == release.version:
+            return
+        self.banner.set_action("Atualizar agora" if self._can_install() else "Baixar")
+        self.banner.offer(
+            f"Nova versão {release.version} disponível — você está na {__version__}.",
+            before=self.notebook,
+        )
+        self._set_status(f"Atualização disponível: {release.version}.")
+
+    def _open_updates(self) -> None:
+        window = self._new_window("Atualizações", "660x430")
+        view = UpdatesView(window, on_check=self._check_manually, on_toggle=self._set_check_updates)
+        view.pack(fill="both", expand=True)
+        self._updates_view = view
+
+    def _set_check_updates(self, enabled: bool) -> None:
+        stored = settings.load()
+        stored.check_updates = enabled
+        settings.save(stored)
+        self._set_status(
+            "Vou verificar atualizações ao abrir." if enabled else "Não vou checar atualizações."
+        )
+
+    def _start_update(self) -> None:
+        """Banner button: update in place, or point at the release page."""
+        release = self._release
+        target = self._update_target
+        if release is None:
+            return
+        if target is None or not self._can_install():
+            self._set_status("Abrindo a página do release…")
+            self._open_notes()
+            return
+        UpdateProgress(
+            self.root,
+            release=release,
+            work_dir=data_dir() / "updates" / release.version,
+            on_ready=lambda executable: self._install(target, executable),
+        )
+
+    def _install(self, target: Path, executable: Path) -> None:
+        """Swap the executable and quit, so the helper script can take over."""
+        try:
+            update.apply_update(target, executable)
+        except OSError as exc:
+            self._fail(f"não foi possível iniciar a troca: {exc}")
+            return
+        _LOG.info("updating %s with %s", target, executable)
+        self._set_status("Reiniciando na versão nova…")
+        self.root.after(600, self.root.destroy)
+
+    def _open_notes(self) -> None:
+        url = self._release.notes_url if self._release is not None else _REPO_URL
+        webbrowser.open(url or _REPO_URL)
+
+    def _dismiss_update(self) -> None:
+        """Hide the banner and remember not to insist on this version."""
+        if self._release is not None:
+            stored = settings.load()
+            stored.skipped_version = self._release.version
+            settings.save(stored)
+        self.banner.hide()
 
     def _new_window(self, title: str, size: str = "920x560") -> tk.Toplevel:
         window = tk.Toplevel(self.root)
@@ -299,6 +441,9 @@ class WzsearchApp:
         if kind == "imported" and isinstance(payload, ImportResult):
             self._refresh()
             self._set_status(f"{payload.added} nova(s) no banco · {payload.skipped} já estavam lá.")
+        elif kind == "release" and isinstance(payload, tuple):
+            release, manual = payload
+            self._on_release(release, manual=bool(manual))
         else:
             self._fail(str(payload))
 

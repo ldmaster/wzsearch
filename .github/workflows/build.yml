@@ -22,52 +22,85 @@ jobs:
       - run: mypy
       - run: pytest
 
-  build:
+  # The shipped artifact is the Windows executable. The macOS app is built
+  # locally (scripts/build_macos.sh) and is not part of the release.
+  build-windows:
     needs: test
     if: github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            name: windows
-          - os: ubuntu-latest
-            name: linux
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install "pyinstaller>=6.6,<7"
-      - name: Install GUI dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: python -m pip install -e ".[gui]"
-      - name: Build CLI (Linux)
-        if: runner.os != 'Windows'
-        run: pyinstaller --onefile --name wzsearch --paths src packaging/wzsearch_entry.py
-      - name: Build GUI (Windows)
-        if: runner.os == 'Windows'
+      - run: python -m pip install -e ".[gui]" "pyinstaller>=6.6,<7"
+      # The version lives in one place (src/wzsearch/__init__.py); this writes
+      # the PE resource the updater reads after downloading a release.
+      - name: Version resource
+        run: python scripts/make_version_info.py
+      - name: Build the app
         run: >
           pyinstaller --onefile --windowed --name wzsearch --paths src
+          --version-file packaging/version_info.txt
           --icon packaging\icon.ico
           --collect-all tkinterdnd2 --collect-all pillow_heif
           packaging/wzsearch_gui_entry.py
-      - name: Package zip (Windows)
-        if: runner.os == 'Windows'
+      # Required by SignPath: the artifact has to exist on the GitHub side
+      # before the signing request. It is uploaded as a file, not a ZIP, so the
+      # artifact configuration can describe a bare <pe-file>.
+      - name: Upload the unsigned executable
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: wzsearch-unsigned
+          path: dist/wzsearch.exe
+          archive: false
+      - name: SignPath configured?
+        id: signpath
         shell: pwsh
-        run: Compress-Archive -Path dist/* -DestinationPath "wzsearch-${{ matrix.name }}.zip"
-      - name: Package zip (Linux)
-        if: runner.os != 'Windows'
-        run: chmod +x dist/wzsearch && zip -j "wzsearch-${{ matrix.name }}.zip" dist/wzsearch
+        env:
+          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          if ($env:TOKEN) {
+            "configured=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "Sem SIGNPATH_API_TOKEN: o zip sai sem assinatura."
+            "configured=false" >> $env:GITHUB_OUTPUT
+          }
+      - name: Sign with SignPath
+        if: steps.signpath.outputs.configured == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: wzsearch
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: wzsearch
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          skip-decompress: true
+          output-artifact-directory: signed
+      - name: Package the release zip
+        shell: pwsh
+        run: |
+          if (Test-Path "signed/wzsearch.exe") {
+            Copy-Item "signed/wzsearch.exe" "dist/wzsearch.exe" -Force
+            Write-Host "Executavel assinado pela SignPath."
+          } else {
+            Write-Host "Sem assinatura: o updater so avisa, nao instala."
+          }
+          Compress-Archive -Path "dist/wzsearch.exe" -DestinationPath "wzsearch-windows.zip" -Force
       - uses: actions/upload-artifact@v4
         with:
-          name: wzsearch-${{ matrix.name }}
-          path: wzsearch-${{ matrix.name }}.zip
+          name: wzsearch-windows
+          path: wzsearch-windows.zip
 
   release:
-    needs: build
+    needs: build-windows
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -81,27 +114,3 @@ jobs:
         with:
           files: artifacts/*.zip
           generate_release_notes: true
-
-  # Best-effort: GitHub's arm64 macOS runners are capacity-constrained and the
-  # job may never be assigned a runner. It runs after the release exists and
-  # never fails the workflow.
-  build-macos:
-    needs: release
-    if: startsWith(github.ref, 'refs/tags/v')
-    continue-on-error: true
-    timeout-minutes: 20
-    runs-on: macos-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install "pyinstaller>=6.6,<7"
-      - run: pyinstaller --onefile --name wzsearch --paths src packaging/wzsearch_entry.py
-      - run: chmod +x dist/wzsearch && zip -j wzsearch-macos.zip dist/wzsearch
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: wzsearch-macos.zip
