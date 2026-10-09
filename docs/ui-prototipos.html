@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wzsearch — protótipos de UI</title>
+<style>
+  :root{
+    --bg:#f2f4f5; --panel:#ffffff; --ink:#1f2933; --muted:#6b7280; --line:#e2e6e8;
+    --accent:#128c7e; --accent-soft:#e8f5f2; --danger:#c0392b; --chip:#eef1f3;
+    --shadow:0 10px 30px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1316; --panel:#1a2025; --ink:#e8edf0; --muted:#98a2ab; --line:#2b343b;
+      --accent:#2bb39f; --accent-soft:#14302b; --danger:#e06c5f; --chip:#232c33;
+      --shadow:0 10px 30px rgba(0,0,0,.45);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{padding:26px 28px 0;max-width:1180px;margin:0 auto}
+  h1{margin:0 0 4px;font-size:22px}
+  header p{margin:0;color:var(--muted)}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 0}
+  .tabs button{border:1px solid var(--line);background:var(--panel);color:var(--ink);
+               padding:9px 14px;border-radius:999px;cursor:pointer;font-size:13px}
+  .tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  main{max-width:1180px;margin:0 auto;padding:18px 28px 60px}
+  .panel{display:none}
+  .panel.on{display:block}
+  .lead{display:flex;gap:22px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap}
+  .lead .note{flex:1 1 300px;background:var(--panel);border:1px solid var(--line);
+              border-radius:12px;padding:14px 16px}
+  .lead h2{margin:0 0 6px;font-size:16px}
+  .lead ul{margin:6px 0 0 18px;padding:0}
+  .lead .good{color:var(--accent)}
+  .mock{flex:1 1 640px;background:var(--panel);border:1px solid var(--line);
+        border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+  .bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);
+       background:linear-gradient(180deg,var(--panel),var(--bg))}
+  .dots{display:flex;gap:6px}
+  .dots i{width:10px;height:10px;border-radius:50%;background:var(--line);display:block}
+  .bar b{font-size:12px;color:var(--muted);font-weight:600}
+  .tabbar{display:flex;gap:6px;padding:8px 12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .tabbar span{padding:6px 12px;border:1px solid var(--line);border-bottom:none;
+                border-radius:8px 8px 0 0;color:var(--muted);font-size:13px;background:var(--bg)}
+  .tabbar span.on{color:var(--ink);background:var(--panel);font-weight:600}
+  .pane{padding:12px}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;
+        color:var(--muted);background:var(--bg)}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+  .btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;
+       padding:6px 11px;font-size:13px;cursor:pointer}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.ghost{background:transparent}
+  .btn.danger{color:var(--danger)}
+  .btn[disabled]{opacity:.45;cursor:default}
+  input[type=text],select{border:1px solid var(--line);background:var(--panel);color:var(--ink);
+        border-radius:8px;padding:6px 9px;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:var(--accent-soft)}
+  tbody tr.sel{background:var(--accent-soft);outline:1px solid var(--accent);outline-offset:-1px}
+  .scroll{max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .muted{color:var(--muted)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{background:var(--chip);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--ink)}
+  .chip b{color:var(--accent)}
+  .drawer{position:relative}
+  .drawer .panelbox{border:1px solid var(--line);border-radius:12px;background:var(--panel);
+        width:250px;padding:10px;display:none;position:absolute;right:0;top:36px;z-index:5;
+        box-shadow:var(--shadow)}
+  .drawer.open .panelbox{display:block}
+  .drawer .item{display:flex;justify-content:space-between;padding:9px 8px;border-radius:8px;cursor:pointer}
+  .drawer .item:hover{background:var(--accent-soft)}
+  .count{color:var(--muted);font-size:12px}
+  .two{display:flex;gap:12px}
+  .two .left{flex:2;min-width:0}
+  .two .right{flex:1;min-width:190px}
+  .side{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg)}
+  .frame{width:150px;height:110px;border-radius:8px;background:linear-gradient(135deg,#9fd8ce,#128c7e);
+         margin-bottom:8px}
+  .status{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
+          border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+  .ctx{display:flex;gap:6px;flex-wrap:wrap;min-height:34px;align-items:center}
+  footer{max-width:1180px;margin:0 auto;padding:0 28px 50px;color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>wzsearch — protótipos de UI</h1>
+  <p>Simulações clicáveis das 3 ideias de refatoração (não é o app de verdade). Compare com a tela de hoje.</p>
+  <nav class="tabs" id="tabs">
+    <button data-target="atual" aria-selected="true">Hoje</button>
+    <button data-target="i1" aria-selected="false">Ideia 1 — Uma lista só</button>
+    <button data-target="i2" aria-selected="false">Ideia 2 — Gaveta de ajustes</button>
+    <button data-target="i3" aria-selected="false">Ideia 3 — Ações no contexto</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============ HOJE ============ -->
+  <section class="panel on" id="atual">
+    <div class="lead">
+      <div class="note">
+        <h2>Hoje: 6 abas + 4 botões fixos</h2>
+        <ul>
+          <li>Fotos, Buscar termo, Resultados, Remetentes, Lixeira, Análises, Dados.</li>
+          <li>Na aba principal: 4 botões sempre visíveis, mesmo sem seleção.</li>
+          <li>Importar e buscar são telas separadas para a mesma tarefa.</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><b>wzsearch — fotos e buscas do WhatsApp</b></div>
+        <div class="tabbar">
+          <span class="on">Fotos</span><span>Buscar termo</span><span>Resultados</span>
+          <span>Remetentes</span><span>Lixeira</span><span>Análises</span><span>Dados</span>
+        </div>
+        <div class="pane">
+          <div class="row">
+            <button class="btn">Incluir/Excluir da análise (Espaço)</button>
+            <button class="btn">Excluir (lixeira)</button>
+            <button class="btn">Salvar CSV…</button>
+            <button class="btn">Colunas…</button>
+            <span class="muted">269 de 269 linha(s)</span>
+          </div>
+          <div class="row">
+            <span class="muted">Remetente:</span><select><option>(todos)</option></select>
+            <span class="muted">De:</span><input type="text" size="10">
+            <span class="muted">até:</span><input type="text" size="10">
+            <label class="muted"><input type="checkbox"> só pendentes</label>
+            <button class="btn">Filtrar</button>
+          </div>
+          <div class="two">
+            <div class="left scroll">
+              <table>
+                <thead><tr><th>☑</th><th>Remetente</th><th>Telefone</th><th>Data</th><th>Hora</th><th>Contexto</th><th>Legenda</th><th>Arquivo</th></tr></thead>
+                <tbody>
+                  <tr><td>☑</td><td>raquel</td><td>—</td><td>2026-09-21</td><td>17:12</td><td>IMG-20260921-WA0011.jpg (arquivo anexado)</td><td>comecei hoje e já tenho refeição saudável</td><td>IMG-…WA0011.jpg</td></tr>
+                  <tr><td>☑</td><td>+55 11 91775-0392</td><td>+55 11 91775-0392</td><td>2026-09-22</td><td>18:58</td><td>&lt;Mídia oculta&gt;</td><td>Dia 5</td><td>—</td></tr>
+                  <tr><td>☑</td><td>+55 51 9996-5853</td><td>+55 51 9996-5853</td><td>2026-09-23</td><td>12:14</td><td>&lt;Mídia oculta&gt;</td><td>1/5 e não é gemini nem gpt</td><td>—</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="right side">
+              <div class="frame"></div>
+              <b>raquel</b>
+              <div class="muted" style="font-size:12px">foto + todos os campos da linha</div>
+            </div>
+          </div>
+        </div>
+        <div class="status"><span>269 foto(s) — veja Resultados e Análises</span><span>ativas 269 · fora 0 · lixeira 0</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ IDEIA 1 ============ -->
+  <section class="panel" id="i1">
+    <div class="lead">
+      <div class="note">
+        <h2>Ideia 1 — “Uma lista só”</h2>
+        <p class="muted">Fotos + Buscar termo + Resultados viram uma tela.</p>
+        <ul>
+          <li><b>Digite</b> abaixo: a lista filtra na hora (experimente <code>bolo</code> ou marque <i>regex</i> e use <code>\d{4}</code>).</li>
+          <li class="good">Ganho: sai de 3 abas para 1; buscar e listar viram a mesma coisa.</li>
+          <li>Custo: a busca deixa de ser uma tela separada e passa a ser um filtro.</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><b>wzsearch — Explorar</b></div>
+        <div class="tabbar"><span class="on">Explorar</span><span>Análises</span></div>
+        <div class="pane">
+          <div class="drop">Arraste o export do WhatsApp (.zip/.txt) aqui &nbsp;ou&nbsp; <button class="btn">Escolher arquivo…</button></div>
+          <div class="row">
+            <input type="text" id="q1" placeholder="Buscar por termo ou regex…" size="26">
+            <label class="muted"><input type="checkbox" id="re1"> regex</label>
+            <select id="s1"><option>(todos)</option><option>raquel</option><option>+55 11 91775-0392</option><option>+55 51 9996-5853</option></select>
+            <label class="muted"><input type="checkbox"> só pendentes</label>
+            <span class="muted" id="c1"></span>
+          </div>
+          <div class="chips" id="chips1"></div>
+          <div class="two" style="margin-top:10px">
+            <div class="left scroll">
+              <table id="t1">
+                <thead><tr><th>☑</th><th>Remetente</th><th>Data</th><th>Contexto</th><th>Legenda</th><th>Arquivo</th></tr></thead>
+                <tbody>
+                  <tr data-sender="raquel"><td>☑</td><td>raquel</td><td>2026-09-21</td><td>IMG-20260921-WA0011.jpg (arquivo anexado)</td><td>comecei hoje e já tenho refeição saudável</td><td>IMG-…WA0011.jpg</td></tr>
+                  <tr data-sender="+55 11 91775-0392"><td>☑</td><td>+55 11 91775-0392</td><td>2026-09-22</td><td>&lt;Mídia oculta&gt;</td><td>Dia 5</td><td>—</td></tr>
+                  <tr data-sender="+55 51 9996-5853"><td>☑</td><td>+55 51 9996-5853</td><td>2026-09-23</td><td>&lt;Mídia oculta&gt;</td><td>1/5 e não é gemini nem gpt</td><td>—</td></tr>
+                  <tr data-sender="raquel"><td>☑</td><td>raquel</td><td>2026-09-29</td><td>&lt;Mídia oculta&gt;</td><td>olha o bolo de chocolate</td><td>—</td></tr>
+                  <tr data-sender="+55 19 98707-3012"><td>☑</td><td>+55 19 98707-3012</td><td>2026-10-01</td><td>IMG-20261001-WA0002.jpg (arquivo anexado)</td><td>pedido 8891 pago</td><td>IMG-…WA0002.jpg</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="right side">
+              <div class="frame"></div>
+              <b>raquel</b>
+              <div class="muted" style="font-size:12px">mesma prévia de hoje, à direita</div>
+            </div>
+          </div>
+        </div>
+        <div class="status"><span id="st1">5 de 5 linha(s)</span><span>ativas 5 · fora 0 · lixeira 0</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ IDEIA 2 ============ -->
+  <section class="panel" id="i2">
+    <div class="lead">
+      <div class="note">
+        <h2>Ideia 2 — “Gaveta de ajustes”</h2>
+        <p class="muted">Remetentes, Lixeira e Dados saem das abas.</p>
+        <ul>
+          <li>Clique na <b>engrenagem ⚙</b> para abrir a gaveta (com contagens).</li>
+          <li class="good">Ganho: só 2 abas de trabalho; manutenção agrupada e com número.</li>
+          <li>Custo: um clique a mais para chegar nelas.</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><b>wzsearch — fotos e buscas do WhatsApp</b></div>
+        <div class="tabbar" style="justify-content:space-between">
+          <span style="border:none;background:transparent">
+            <span class="on">Explorar</span>&nbsp;<span>Análises</span>
+          </span>
+          <span class="drawer" id="d2" style="border:none;background:transparent">
+            <button class="btn" id="g2">⚙ Ajustes ▾</button>
+            <span class="panelbox">
+              <span class="item">Remetentes <span class="count">20</span></span>
+              <span class="item">Lixeira <span class="count">3</span></span>
+              <span class="item">Dados / backup <span class="count">2,4 MB</span></span>
+            </span>
+          </span>
+        </div>
+        <div class="pane">
+          <div class="row"><span class="muted">Filtro:</span><select><option>(todos)</option></select>
+            <input type="text" placeholder="buscar…" size="18"><button class="btn primary">Gerar</button></div>
+          <div class="two">
+            <div class="left scroll">
+              <table>
+                <thead><tr><th>☑</th><th>Remetente</th><th>Data</th><th>Legenda</th><th>Arquivo</th></tr></thead>
+                <tbody>
+                  <tr><td>☑</td><td>raquel</td><td>2026-09-21</td><td>comecei hoje e já tenho refeição saudável</td><td>IMG-…WA0011.jpg</td></tr>
+                  <tr><td>☑</td><td>+55 11 91775-0392</td><td>2026-09-22</td><td>Dia 5</td><td>—</td></tr>
+                  <tr><td>☐</td><td>+55 51 9996-5853</td><td>2026-09-23</td><td>1/5 e não é gemini nem gpt</td><td>—</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="right side"><div class="frame"></div><b>raquel</b></div>
+          </div>
+        </div>
+        <div class="status"><span>A gaveta guarda o que é manutenção, fora do caminho do uso diário</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ IDEIA 3 ============ -->
+  <section class="panel" id="i3">
+    <div class="lead">
+      <div class="note">
+        <h2>Ideia 3 — “Ações no contexto”</h2>
+        <p class="muted">A barra de botões acompanha a seleção.</p>
+        <ul>
+          <li><b>Clique numa linha</b> para ver os botões mudarem; clique de novo para desmarcar.</li>
+          <li>Ligue um filtro (<i>só pendentes</i>) e ele vira um <b>chip</b> removível.</li>
+          <li class="good">Ganho: tela limpa; ação certa na hora certa.</li>
+          <li>Custo: esconder ações pede uma dica (“clique direito”).</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><b>wzsearch — Resultados</b></div>
+        <div class="tabbar"><span class="on">Explorar</span><span>Análises</span></div>
+        <div class="pane">
+          <div class="ctx" id="ctx3">
+            <button class="btn">Salvar CSV…</button>
+            <button class="btn">Colunas…</button>
+            <span class="muted" style="margin-left:auto">clique em uma linha</span>
+          </div>
+          <div class="row">
+            <span class="chips" id="chips3"></span>
+            <label class="muted"><input type="checkbox" id="p3"> só pendentes</label>
+          </div>
+          <div class="two">
+            <div class="left scroll">
+              <table id="t3">
+                <thead><tr><th>☑</th><th>Remetente</th><th>Data</th><th>Legenda</th><th>Arquivo</th></tr></thead>
+                <tbody>
+                  <tr><td>☑</td><td>raquel</td><td>2026-09-21</td><td>comecei hoje e já tenho refeição saudável</td><td>IMG-…WA0011.jpg</td></tr>
+                  <tr><td>☑</td><td>+55 11 91775-0392</td><td>2026-09-22</td><td>Dia 5</td><td>—</td></tr>
+                  <tr><td>☐</td><td>+55 51 9996-5853</td><td>2026-09-23</td><td>1/5 e não é gemini nem gpt</td><td>—</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="right side">
+              <div class="frame"></div><b id="who3">—</b>
+              <div class="muted" style="font-size:12px">duplo clique abre a foto</div>
+            </div>
+          </div>
+        </div>
+        <div class="status"><span>Espaço inclui/exclui · clique direito abre o mesmo menu</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>Protótipo estático para avaliação — nada aqui grava dados. Documento de apoio: docs/ui-ideias.md</footer>
+
+<script>
+  // abas (+ link direto: ui-prototipos.html#i1)
+  const tabs = document.querySelectorAll('#tabs button');
+  function activate(id){
+    tabs.forEach(b => b.setAttribute('aria-selected', b.dataset.target === id ? 'true' : 'false'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === id));
+  }
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    activate(btn.dataset.target);
+    history.replaceState(null, '', '#' + btn.dataset.target);
+  }));
+  if (location.hash) activate(location.hash.slice(1));
+
+  // Ideia 1: filtro ao vivo
+  const q1 = document.getElementById('q1'), re1 = document.getElementById('re1');
+  const s1 = document.getElementById('s1'), rows1 = [...document.querySelectorAll('#t1 tbody tr')];
+  function filter1(){
+    const term = q1.value.trim();
+    const sender = s1.value;
+    let rx = null;
+    if (term && re1.checked){ try { rx = new RegExp(term, 'i'); } catch(e){ rx = null; } }
+    let shown = 0;
+    rows1.forEach(tr => {
+      const text = tr.innerText;
+      const okTerm = !term || (rx ? rx.test(text) : text.toLowerCase().includes(term.toLowerCase()));
+      const okSender = sender === '(todos)' || tr.dataset.sender === sender;
+      const ok = okTerm && okSender;
+      tr.style.display = ok ? '' : 'none';
+      if (ok) shown++;
+    });
+    const regexChip = (term && re1.checked) ? `<span class="chip">regex: <b>${term.replace(/</g,'&lt;')}</b> ✕</span>` : '';
+    document.getElementById('chips1').innerHTML = regexChip;
+    document.getElementById('c1').textContent = `${shown} de ${rows1.length} linha(s)`;
+    document.getElementById('st1').textContent = `${shown} de ${rows1.length} linha(s)`;
+  }
+  [q1, s1].forEach(el => el.addEventListener('input', filter1));
+  re1.addEventListener('change', filter1);
+  filter1();
+
+  // Ideia 2: gaveta
+  const d2 = document.getElementById('d2');
+  document.getElementById('g2').addEventListener('click', () => d2.classList.toggle('open'));
+
+  // Ideia 3: ações no contexto
+  const ctx = document.getElementById('ctx3');
+  const who = document.getElementById('who3');
+  const chips = document.getElementById('chips3');
+  const rows3 = [...document.querySelectorAll('#t3 tbody tr')];
+  function renderCtx(count, one){
+    if (count === 0){
+      ctx.innerHTML = '<button class="btn">Salvar CSV…</button><button class="btn">Colunas…</button>' +
+        '<span class="muted" style="margin-left:auto">clique em uma linha</span>';
+    } else if (count === 1 && one){
+      ctx.innerHTML = '<button class="btn primary">Incluir/Excluir da análise</button>' +
+        '<button class="btn">Excluir (lixeira)</button><button class="btn">Avatar do contato…</button>' +
+        '<button class="btn">Salvar CSV…</button><button class="btn">Colunas…</button>' +
+        `<span class="muted" style="margin-left:auto">1 selecionada</span>`;
+    } else {
+      ctx.innerHTML = `<button class="btn primary">Incluir/Excluir (${count})</button>` +
+        `<button class="btn danger">Excluir (${count})</button><button class="btn">Salvar CSV…</button>` +
+        `<span class="muted" style="margin-left:auto">${count} selecionadas</span>`;
+    }
+  }
+  function renderChips(){
+    chips.innerHTML = document.getElementById('p3').checked
+      ? '<span class="chip">só pendentes ✕</span>' : '';
+  }
+  function selected(){
+    const sel = rows3.filter(tr => tr.classList.contains('sel'));
+    renderCtx(sel.length, sel[0] || null);
+    who.textContent = sel.length === 1 ? sel[0].children[1].textContent : '—';
+  }
+  rows3.forEach(tr => tr.addEventListener('click', () => {
+    tr.classList.toggle('sel'); selected();
+  }));
+  document.getElementById('p3').addEventListener('change', renderChips);
+  renderChips(); renderCtx(0, null);
+</script>
+</body>
+</html>
