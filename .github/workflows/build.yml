@@ -64,11 +64,12 @@ jobs:
         shell: pwsh
         env:
           TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          ORG: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
         run: |
-          if ($env:TOKEN) {
+          if ($env:TOKEN -and $env:ORG) {
             "configured=true" >> $env:GITHUB_OUTPUT
           } else {
-            Write-Host "Sem SIGNPATH_API_TOKEN: o zip sai sem assinatura."
+            Write-Host "Falta SIGNPATH_API_TOKEN e/ou SIGNPATH_ORGANIZATION_ID: o zip sai sem assinatura."
             "configured=false" >> $env:GITHUB_OUTPUT
           }
       - name: Sign with SignPath
