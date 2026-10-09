@@ -94,24 +94,10 @@ TOPICS: tuple[Topic, ...] = (
         tip="O backup é a forma de levar o histórico para outra máquina.",
     ),
     Topic(
-        title="Atualizações",
-        summary="Como o app avisa que existe versão nova.",
-        bullets=(
-            "Ao abrir, ele pergunta ao GitHub qual é a última versão; havendo novidade, "
-            "aparece uma faixa no topo da janela.",
-            "No Windows, “Atualizar agora” baixa o pacote, confere a assinatura digital e "
-            "troca o programa: o app fecha e volta já na versão nova.",
-            "Nada é instalado sem assinatura válida — se a verificação falhar, ele não troca.",
-            "Para desligar (ou checar na hora): ⚙ Ajustes → Atualizações…",
-        ),
-        tip="Essa consulta é a única conexão que o wzsearch faz com a internet.",
-    ),
-    Topic(
         title="Privacidade",
         summary="O que acontece com os seus dados.",
         bullets=(
-            "O conteúdo das conversas nunca é enviado: a única conexão é a consulta de "
-            "versão (desligável em Ajustes → Atualizações).",
+            "Nada é enviado para a internet: o programa roda offline.",
             "As fotos ficam numa base local (um arquivo .db) na pasta de dados do usuário.",
             "O programa não copia mídia para fora dele; só referencia e mostra.",
         ),

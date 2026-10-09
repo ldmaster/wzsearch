@@ -39,7 +39,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[gui]" "pyinstaller>=6.6,<7"
       # The version lives in one place (src/wzsearch/__init__.py); this writes
-      # the PE resource the updater reads after downloading a release.
+      # the PE resource so the executable carries its own version.
       - name: Version resource
         run: python scripts/make_version_info.py
       - name: Build the app
@@ -49,53 +49,9 @@ jobs:
           --icon packaging\icon.ico
           --collect-all tkinterdnd2 --collect-all pillow_heif
           packaging/wzsearch_gui_entry.py
-      # Required by SignPath: the artifact has to exist on the GitHub side
-      # before the signing request. It is uploaded as a file, not a ZIP, so the
-      # artifact configuration can describe a bare <pe-file>.
-      - name: Upload the unsigned executable
-        id: unsigned
-        uses: actions/upload-artifact@v4
-        with:
-          name: wzsearch-unsigned
-          path: dist/wzsearch.exe
-          archive: false
-      - name: SignPath configured?
-        id: signpath
-        shell: pwsh
-        env:
-          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
-          ORG: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-        run: |
-          if ($env:TOKEN -and $env:ORG) {
-            "configured=true" >> $env:GITHUB_OUTPUT
-          } else {
-            Write-Host "Falta SIGNPATH_API_TOKEN e/ou SIGNPATH_ORGANIZATION_ID: o zip sai sem assinatura."
-            "configured=false" >> $env:GITHUB_OUTPUT
-          }
-      - name: Sign with SignPath
-        if: steps.signpath.outputs.configured == 'true'
-        uses: signpath/github-action-submit-signing-request@v3
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: wzsearch
-          signing-policy-slug: wzsearch
-          # Sem artifact-configuration-slug: vale a configuração padrão do
-          # projeto (mesmo comportamento do snippet que a SignPath gera).
-          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          skip-decompress: true
-          output-artifact-directory: signed
       - name: Package the release zip
         shell: pwsh
-        run: |
-          if (Test-Path "signed/wzsearch.exe") {
-            Copy-Item "signed/wzsearch.exe" "dist/wzsearch.exe" -Force
-            Write-Host "Executavel assinado pela SignPath."
-          } else {
-            Write-Host "Sem assinatura: o updater so avisa, nao instala."
-          }
-          Compress-Archive -Path "dist/wzsearch.exe" -DestinationPath "wzsearch-windows.zip" -Force
+        run: Compress-Archive -Path "dist/wzsearch.exe" -DestinationPath "wzsearch-windows.zip" -Force
       - uses: actions/upload-artifact@v4
         with:
           name: wzsearch-windows

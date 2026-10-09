@@ -28,9 +28,7 @@ class DataView(ttk.Frame):
             self,
             text=(
                 "Um único backup (.zip) leva as fotos registradas, os nomes de remetentes "
-                "e os avatares. O conteúdo das conversas não sai da sua máquina — a única "
-                "conexão é a checagem de atualização, que dá para desligar em "
-                "⚙ Ajustes → Atualizações…"
+                "e os avatares. Nada sai da sua máquina."
             ),
             foreground="#666",
             wraplength=640,
