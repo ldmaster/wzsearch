@@ -1,9 +1,10 @@
 """Mouse-wheel scrolling that behaves the same on macOS, Windows and Linux.
 
-Tk's default Treeview binding scrolls by the raw wheel delta. On macOS the
-trackpad reports per-event deltas that make the list jump several rows at a
-time; here every event moves a small, bounded number of rows instead, which
-keeps the motion even (arrow keys already move row by row).
+Tk's default Treeview binding scrolls by the raw wheel delta. On macOS a wheel
+*notch* reports a larger delta than a trackpad event, so scaling by the delta
+makes the mouse jump several rows while the trackpad feels fine. Here a macOS
+event always moves a single row (both devices), and Windows/Linux notches move
+a fixed few lines.
 """
 
 from __future__ import annotations
@@ -14,8 +15,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # tkinter is imported lazily so the pure helper stays testable
     import tkinter as tk
 
-#: Never jump more than this many rows for a single wheel event.
-MAX_ROWS_PER_EVENT = 3
+#: Rows per wheel notch on platforms that report notches (Windows: 120/notch).
+LINES_PER_NOTCH = 3
+#: Hard cap for a single event, however large the delta is.
+MAX_ROWS_PER_EVENT = 9
 
 
 def rows_for_delta(delta: int) -> int:
@@ -23,11 +26,11 @@ def rows_for_delta(delta: int) -> int:
     if delta == 0:
         return 0
     direction = -1 if delta > 0 else 1
-    if abs(delta) >= 120:  # Windows/mouse wheel: multiples of 120 per notch
-        magnitude = max(1, min(abs(delta) // 120, MAX_ROWS_PER_EVENT))
-    else:  # macOS trackpad: small deltas per event
-        magnitude = max(1, min(abs(delta), MAX_ROWS_PER_EVENT))
-    return direction * magnitude
+    if abs(delta) >= 120:  # Windows/mouse wheel: 120 per notch
+        notches = max(1, abs(delta) // 120)
+        return direction * min(notches * LINES_PER_NOTCH, MAX_ROWS_PER_EVENT)
+    # macOS trackpad and mouse: one row per event keeps the motion even
+    return direction
 
 
 def bind_wheel(widget: tk.Misc, scroll_by: Callable[[int], None]) -> None:
@@ -40,11 +43,11 @@ def bind_wheel(widget: tk.Misc, scroll_by: Callable[[int], None]) -> None:
         return "break"
 
     def on_up(_event: tk.Event) -> str:
-        scroll_by(-MAX_ROWS_PER_EVENT)
+        scroll_by(-1)
         return "break"
 
     def on_down(_event: tk.Event) -> str:
-        scroll_by(MAX_ROWS_PER_EVENT)
+        scroll_by(1)
         return "break"
 
     widget.bind("<MouseWheel>", on_wheel, add="+")
