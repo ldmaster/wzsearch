@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from collections.abc import Callable, Mapping, Sequence
+from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Literal, Protocol
@@ -18,7 +19,7 @@ _PREVIEW_SIDE = _PREVIEW_BOX + _PREVIEW_PAD * 2
 _AVATAR_BOX = 44
 _VIEWER_BOX = 900
 _ALL_SENDERS = "(todos)"
-_CELL_TEXT = 60
+_CELL_TEXT = 80
 _PREVIEW_DELAY_MS = 60
 
 #: Row fields shown in the side panel (never the media blob).
@@ -40,15 +41,25 @@ _DETAIL_KEYS = (
     "status",
 )
 
-#: (column key, heading, width, anchor). Kept few: the Treeview repaints every
-#: scroll and the cost grows with the column count; the rest lives in the side panel.
+#: (column key, heading, width, anchor) — everything the table can show.
 _DISPLAY_COLUMNS: tuple[tuple[str, str, int, Literal["w", "center"]], ...] = (
     ("incluido", "Incluído", 70, "center"),
     ("remetente", "Remetente", 170, "w"),
+    ("telefone_remetente", "Telefone", 130, "w"),
     ("data", "Data", 90, "w"),
-    ("legenda", "Legenda", 300, "w"),
-    ("foto_arquivo", "Arquivo", 220, "w"),
+    ("hora", "Hora", 70, "w"),
+    ("contexto", "Contexto", 280, "w"),
+    ("legenda", "Legenda", 220, "w"),
+    ("contexto_provavel", "Contexto provável", 200, "w"),
+    ("foto_arquivo", "Arquivo", 200, "w"),
+    ("foto_existe", "Tem arquivo", 90, "center"),
+    ("midia_pendente", "Pendente", 80, "center"),
 )
+
+#: A smaller set for when scrolling speed matters more than seeing everything.
+_FAST_COLUMNS = ("incluido", "remetente", "data", "legenda", "foto_arquivo")
+
+_ALL_COLUMN_KEYS = tuple(key for key, _, _, _ in _DISPLAY_COLUMNS)
 
 
 class StatusSink(Protocol):
@@ -62,6 +73,8 @@ def _cell(row: Mapping[str, Any], column: str) -> str:
     if column == "incluido":
         return "☑" if row.get("incluir") else "☐"
     text = str(row.get(column, "") or "")
+    if not text:
+        return "—"
     return text if len(text) <= _CELL_TEXT else text[:_CELL_TEXT] + "…"
 
 
@@ -85,6 +98,8 @@ class ResultsView(ttk.Frame):
         self._rows: list[Mapping[str, Any]] = []
         self._by_iid: dict[str, Mapping[str, Any]] = {}
         self._db_backed = False
+        self._visible_columns: list[str] = list(_ALL_COLUMN_KEYS)
+        self._column_vars: dict[str, tk.BooleanVar] = {}
         self._image: Any = None
         self._avatar: Any = None
         self._viewer: Any = None
@@ -105,6 +120,7 @@ class ResultsView(ttk.Frame):
             side="left", padx=4
         )
         ttk.Button(toolbar, text="Salvar CSV…", command=self._on_save).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Colunas…", command=self._choose_columns).pack(side="left", padx=4)
         self.count_label = ttk.Label(toolbar, text="sem dados")
         self.count_label.pack(side="left", padx=10)
 
@@ -136,7 +152,9 @@ class ResultsView(ttk.Frame):
         yscroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
         xscroll = ttk.Scrollbar(table, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
-        self.tree.configure(columns=[column for column, _, _, _ in _DISPLAY_COLUMNS])
+        self.tree.configure(
+            columns=list(_ALL_COLUMN_KEYS), displaycolumns=list(self._visible_columns)
+        )
         for column, title, width, anchor in _DISPLAY_COLUMNS:
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, anchor=anchor, stretch=False)
@@ -175,6 +193,54 @@ class ResultsView(ttk.Frame):
         self.details.pack(fill="both", expand=True)
         self.details.configure(state="disabled")
         return side
+
+    # -- columns ----------------------------------------------------------
+    def _choose_columns(self) -> None:
+        """Open a small dialog to pick which columns the table shows."""
+        self._column_vars = {
+            key: tk.BooleanVar(value=key in self._visible_columns) for key in _ALL_COLUMN_KEYS
+        }
+        window = tk.Toplevel(self)
+        window.title("Colunas da tabela")
+        window.transient(self.winfo_toplevel())
+        frame = ttk.Frame(window, padding=10)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Marque as colunas que quer ver:").pack(anchor="w", pady=(0, 6))
+        for key, heading, *_ in _DISPLAY_COLUMNS:
+            ttk.Checkbutton(
+                frame,
+                text=heading,
+                variable=self._column_vars[key],
+                command=self._apply_column_choice,
+            ).pack(anchor="w")
+        presets = ttk.Frame(frame)
+        presets.pack(fill="x", pady=(10, 0))
+        ttk.Button(
+            presets, text="Todas", command=partial(self._preset_columns, _ALL_COLUMN_KEYS)
+        ).pack(side="left")
+        ttk.Button(
+            presets,
+            text="Enxuto (mais rápido)",
+            command=partial(self._preset_columns, _FAST_COLUMNS),
+        ).pack(side="left", padx=4)
+        ttk.Button(presets, text="Fechar", command=window.destroy).pack(side="right")
+
+    def _apply_column_choice(self) -> None:
+        chosen = [key for key in _ALL_COLUMN_KEYS if self._column_vars[key].get()]
+        if not chosen:
+            self._on_status("Deixe pelo menos uma coluna marcada.", ok=False)
+            self._column_vars[_ALL_COLUMN_KEYS[0]].set(True)
+            chosen = [_ALL_COLUMN_KEYS[0]]
+        self._visible_columns = chosen
+        self._apply_columns()
+
+    def _preset_columns(self, keys: Sequence[str]) -> None:
+        for key, variable in self._column_vars.items():
+            variable.set(key in keys)
+        self._apply_column_choice()
+
+    def _apply_columns(self) -> None:
+        self.tree.configure(displaycolumns=list(self._visible_columns))
 
     # -- data -------------------------------------------------------------
     def show(self, rows: Sequence[Mapping[str, Any]]) -> None:
@@ -215,10 +281,7 @@ class ResultsView(ttk.Frame):
             iid = str(row["id"]) if self._db_backed else str(index)
             self._by_iid[iid] = row
             self.tree.insert(
-                "",
-                "end",
-                iid=iid,
-                values=[_cell(row, column) for column, _, _, _ in _DISPLAY_COLUMNS],
+                "", "end", iid=iid, values=[_cell(row, key) for key in _ALL_COLUMN_KEYS]
             )
         self.count_label.configure(text=f"{len(visible)} de {len(self._rows)} linha(s)")
 
