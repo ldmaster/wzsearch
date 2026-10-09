@@ -18,9 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from . import senders
 from .avatars import config_dir
 from .gui_analytics import AnalyticsView
 from .gui_results import ResultsView, TrashView
+from .gui_senders import SendersView
 from .images import HEIF_AVAILABLE, PILLOW_AVAILABLE
 from .pipeline import (
     MODE_PHOTOS,
@@ -199,6 +201,8 @@ class WzsearchApp:
         self.store, self._store_warning = _open_store()
         self._build()
         self._refresh()
+        if self.store.counts()["active"]:
+            self.notebook.select(self.results)  # type: ignore[no-untyped-call]
 
     def _build(self) -> None:
         self.notebook = ttk.Notebook(self.root)
@@ -216,6 +220,10 @@ class WzsearchApp:
             on_save=self._save,
         )
         self.notebook.add(self.results, text="Resultados")
+        self.senders_view = SendersView(
+            self.notebook, on_status=self._set_status, on_changed=self._refresh
+        )
+        self.notebook.add(self.senders_view, text="Remetentes")
         self.trash = TrashView(
             self.notebook, store=self.store, on_status=self._set_status, on_changed=self._refresh
         )
@@ -237,12 +245,14 @@ class WzsearchApp:
 
     # -- data -------------------------------------------------------------
     def _refresh(self) -> None:
-        self.results.show(self.store.rows())
+        stored = self.store.rows()
+        self.results.show(senders.rename_rows(stored))
+        self.senders_view.show(stored)
         deleted = [
             row for row in self.store.rows(include_deleted=True) if row["status"] == "deleted"
         ]
-        self.trash.show(deleted)
-        self.analytics.show(self.store.rows(only_included=True))
+        self.trash.show(senders.rename_rows(deleted))
+        self.analytics.show(senders.rename_rows(self.store.rows(only_included=True)))
         counts = self.store.counts()
         self.summary.configure(
             text=(

@@ -7,8 +7,10 @@ from collections.abc import Sequence
 from tkinter import ttk
 from typing import Literal
 
-from .analytics import WEEKDAY_LABELS, PhotoStats, photo_stats
+from .analytics import WEEKDAY_LABELS, PhotoStats, filter_rows, photo_stats
 from .chart import BarChart, Heatmap
+
+_ALL = "(todos)"
 
 _METRIC_LABELS = {
     "total": "Total de fotos",
@@ -74,9 +76,22 @@ class AnalyticsView(ttk.Frame):
 
         self._metrics: dict[str, tk.StringVar] = {}
         self.charts: dict[str, BarChart] = {}
+        self._all_rows: list[dict[str, object]] = []
+        self.sender_var = tk.StringVar(value=_ALL)
         self._build()
 
     def _build(self) -> None:
+        filter_box = ttk.Frame(self._inner)
+        filter_box.pack(fill="x", pady=(0, 8))
+        ttk.Label(filter_box, text="Análises de:").pack(side="left")
+        self.sender_box = ttk.Combobox(
+            filter_box, textvariable=self.sender_var, width=28, state="readonly"
+        )
+        self.sender_box.pack(side="left", padx=6)
+        self.sender_box.bind("<<ComboboxSelected>>", lambda _event: self._recompute())
+        self.scope_label = ttk.Label(filter_box, text="geral", foreground="#666")
+        self.scope_label.pack(side="left", padx=8)
+
         metrics_box = ttk.LabelFrame(self._inner, text="Resumo", padding=8)
         metrics_box.pack(fill="x", pady=(0, 10))
         for key in _METRIC_ORDER:
@@ -120,8 +135,23 @@ class AnalyticsView(ttk.Frame):
         self.top_days.pack(fill="x")
 
     def show(self, rows: Sequence[dict[str, object]]) -> None:
-        """Recompute and display the metrics for ``rows``."""
-        stats = photo_stats(rows)
+        """Store ``rows`` and refresh the panel for the selected sender."""
+        self._all_rows = list(rows)
+        senders = sorted(
+            {str(row.get("remetente", "") or "") for row in self._all_rows if row.get("remetente")}
+        )
+        self.sender_box.configure(values=[_ALL, *senders])
+        if self.sender_var.get() not in [*senders, _ALL]:
+            self.sender_var.set(_ALL)
+        self._recompute()
+
+    def _recompute(self) -> None:
+        sender = self.sender_var.get()
+        self.scope_label.configure(text="geral" if sender == _ALL else f"só {sender}")
+        rows = self._all_rows if sender == _ALL else filter_rows(self._all_rows, sender=sender)
+        self._render(photo_stats(rows))
+
+    def _render(self, stats: PhotoStats) -> None:
         for key, variable in self._metrics.items():
             variable.set(_format_metric(stats, key))
 

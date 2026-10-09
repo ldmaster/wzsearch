@@ -56,6 +56,7 @@ class CsvSchemaError(ValueError):
 DB_COLUMNS = (
     "id",
     "remetente",
+    "remetente_original",
     "telefone_remetente",
     "data",
     "hora",

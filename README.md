@@ -179,10 +179,13 @@ Quatro abas:
 - **Fotos** — arraste o export (`.zip`/`.txt`) e clique em **Gerar**: as fotos vão para
   uma **base local** e ficam salvas entre sessões (reimportar o mesmo export não duplica).
 - **Buscar termo** — termos/regex; o resultado aparece na hora (não vai para a base).
-- **Resultados** — as fotos numa tabela, com filtros (remetente, período, só pendentes),
-  **☑ incluir/excluir da análise** (botão ou tecla Espaço), **Excluir** (manda para a
-  lixeira), **prévia da foto**, **visualizador** (duplo clique), **avatares** e
-  **Salvar CSV…** (exporta a visão atual).
+- **Resultados** — as fotos numa tabela (com **barra de rolagem**), filtros (remetente,
+  período, só pendentes), **☑ incluir/excluir da análise** (botão ou tecla Espaço),
+  **Excluir** (manda para a lixeira), **prévia da foto**, **visualizador** (duplo clique),
+  **avatares** e **Salvar CSV…** (exporta a visão atual). Quando a base já tem registros,
+  o app **abre nesta aba**.
+- **Remetentes** — dá um **nome** para quem aparece como número (ex.: `+55 11 9…` →
+  "Ana"). O nome passa a valer na tabela de Resultados, no filtro e nas Análises.
 - **Lixeira** — o que foi excluído, com **Restaurar** e **Excluir definitivamente**.
 - **Análises** — frequência de postagem: total/mídias pendentes, período, **tabela por
   remetente** (fotos, %, com arquivo, pendentes, dias ativos, 1ª e última foto),
@@ -190,7 +193,8 @@ Quatro abas:
   ativos), **palavras mais usadas nas legendas**, **tipos de arquivo**, fotos por
   dia/mês/hora/dia da semana, dias mais movimentados, concentração (top 3),
   mais/menos ativa, média e mediana por dia ativo, intervalo médio/mediano entre
-  fotos e maior sequência de dias seguidos. Só entram as fotos **ativas e marcadas**.
+  fotos e maior sequência de dias seguidos. Só entram as fotos **ativas e marcadas**, e
+  um **filtro no topo** mostra o **geral** ou **por remetente**.
 
 ### Onde ficam os dados
 

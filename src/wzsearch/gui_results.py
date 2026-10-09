@@ -137,9 +137,9 @@ class ResultsView(ttk.Frame):
         for column, title, width, anchor in _DISPLAY_COLUMNS:
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, anchor=anchor, stretch=False)
-        self.tree.pack(side="top", fill="both", expand=True)
         yscroll.pack(side="right", fill="y")
         xscroll.pack(side="bottom", fill="x")
+        self.tree.pack(side="left", fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._show_preview())
         self.tree.bind("<Double-1>", lambda _event: self._open_viewer())
         self.tree.bind("<space>", self._on_space)
@@ -357,12 +357,18 @@ class TrashView(ttk.Frame):
         )
         self.count_label = ttk.Label(toolbar, text="lixeira vazia")
         self.count_label.pack(side="left", padx=10)
+        table = ttk.Frame(self)
+        table.pack(fill="both", expand=True, pady=(8, 0))
+        scroll = ttk.Scrollbar(table, orient="vertical")
         self.tree = ttk.Treeview(
-            self,
+            table,
             show="headings",
             selectmode="extended",
+            yscrollcommand=scroll.set,
             columns=("remetente", "data", "hora", "legenda", "arquivo"),
         )
+        scroll.configure(command=self.tree.yview)
+        scroll.pack(side="right", fill="y")
         for column, title, width in (
             ("remetente", "Remetente", 160),
             ("data", "Data", 90),
@@ -372,7 +378,7 @@ class TrashView(ttk.Frame):
         ):
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, anchor="w", stretch=False)
-        self.tree.pack(fill="both", expand=True, pady=(8, 0))
+        self.tree.pack(side="left", fill="both", expand=True)
 
     def show(self, rows: Sequence[Mapping[str, Any]]) -> None:
         """Load deleted rows into the table."""
