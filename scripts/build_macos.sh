@@ -18,14 +18,16 @@ uv pip install --python "$VENV/bin/python" -e ".[gui]" "pyinstaller>=6.6,<7"
 
 echo "==> Compilando binários"
 rm -rf build dist ./*.spec
-"$PYINSTALLER" --onefile --name wzsearch --paths src packaging/wzsearch_entry.py
+# O CLI local fica "wzsearch-cli" porque o .app (a interface) já usa "wzsearch"
+# — no macOS os dois não podem ter o mesmo nome em dist/.
+"$PYINSTALLER" --onefile --name wzsearch-cli --paths src packaging/wzsearch_entry.py
 # A GUI vira um .app: no macOS isso exige modo onedir (--onefile é depreciado
 # com --windowed e vira erro no PyInstaller 7).
-"$PYINSTALLER" --windowed --name wzsearch-gui --paths src \
+"$PYINSTALLER" --windowed --name wzsearch --paths src \
     --icon packaging/icon.icns \
     --collect-all tkinterdnd2 --collect-all pillow_heif packaging/wzsearch_gui_entry.py
 
 echo
 echo "Pronto!"
-echo "  Tela (GUI):        open \"$PWD/dist/wzsearch-gui.app\""
-echo "  Linha de comando:  \"$PWD/dist/wzsearch\" --photos --csv fotos.csv \"<export>.zip\""
+echo "  App:               open \"$PWD/dist/wzsearch.app\""
+echo "  Linha de comando:  \"$PWD/dist/wzsearch-cli\" --photos --csv fotos.csv \"<export>.zip\""

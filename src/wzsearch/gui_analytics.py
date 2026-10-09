@@ -45,6 +45,9 @@ _CHART_TITLES = {
     "extensions": "Tipos de arquivo",
 }
 
+#: Pixels per wheel step (a fixed step feels the same for mouse and trackpad).
+_SCROLL_STEP = 24
+
 _SENDER_COLUMNS: tuple[tuple[str, str, int, Literal["w", "e"]], ...] = (
     ("remetente", "Remetente", 200, "w"),
     ("fotos", "Fotos", 60, "e"),
@@ -62,7 +65,7 @@ class AnalyticsView(ttk.Frame):
 
     def __init__(self, master: tk.Misc) -> None:
         super().__init__(master, padding=8)
-        canvas = tk.Canvas(self, highlightthickness=0)
+        canvas = tk.Canvas(self, highlightthickness=0, yscrollincrement=_SCROLL_STEP)
         scroll = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
@@ -81,7 +84,11 @@ class AnalyticsView(ttk.Frame):
         self._all_rows: list[dict[str, object]] = []
         self.sender_var = tk.StringVar(value=_ALL)
         self._build()
-        bind_wheel_tree(self, lambda rows: self._canvas.yview_scroll(rows, "units"))
+        bind_wheel_tree(self, self.scroll)
+
+    def scroll(self, rows: int) -> None:
+        """Scroll the page by ``rows`` wheel steps."""
+        self._canvas.yview_scroll(rows, "units")
 
     def _build(self) -> None:
         filter_box = ttk.Frame(self._inner)

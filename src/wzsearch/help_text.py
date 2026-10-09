@@ -43,7 +43,8 @@ TOPICS: tuple[Topic, ...] = (
             "termo (marque “regex” para usar uma expressão regular).",
             "Clique numa linha para ver a foto e todos os campos no painel da direita; "
             "duplo clique abre a foto em tamanho maior.",
-            "☑/☐ (ou a tecla Espaço) decide o que entra nas Análises.",
+            "Clique no ☑/☐ da primeira coluna (ou use a tecla Espaço com a linha "
+            "selecionada) para decidir o que entra nas Análises.",
             "“Excluir” tira a linha da lista e manda para a lixeira.",
             "“Colunas…” escolhe o que a tabela mostra; “Salvar CSV…” exporta o que está na tela.",
         ),

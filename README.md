@@ -152,7 +152,7 @@ Os binários ficam nas **Releases** do repositório — baixáveis por qualquer 
 
 - https://github.com/ldmaster/wzsearch/releases
 
-Baixe `wzsearch-windows.zip` e descompacte: dentro dele há **só o `wzsearch-gui.exe`**
+Baixe `wzsearch-windows.zip` e descompacte: dentro dele há **só o `wzsearch.exe`**
 (duplo clique para abrir) — as instruções de uso estão na própria janela, no menu
 **Ajuda → Como usar…**. O antigo `wzsearch.bat` e o arquivo de instruções foram
 descontinuados. O CLI continua disponível para quem instala o pacote com `pip`/`uv`.
@@ -248,9 +248,12 @@ cd /Users/lucasdavi/IA/wzsearch
 
 Isso gera:
 
-- `dist/wzsearch-gui.app` — a tela. Abra com: `open dist/wzsearch-gui.app`
-- `dist/wzsearch` — a CLI. Ex.:
-  `./dist/wzsearch --photos --csv fotos.csv "/caminho/export.zip"`
+- `dist/wzsearch.app` — o app. Abra com: `open dist/wzsearch.app`
+- `dist/wzsearch-cli` — a linha de comando. Ex.:
+  `./dist/wzsearch-cli --photos --csv fotos.csv "/caminho/export.zip"`
+
+No macOS os dois não podem ter o mesmo nome (o `.app` usa `wzsearch`, então o CLI
+local fica `wzsearch-cli`); no zip do Windows o executável é `wzsearch.exe`.
 
 O script é equivalente a (caso queira rodar à mão):
 
@@ -259,10 +262,10 @@ cd /Users/lucasdavi/IA/wzsearch
 uv python install 3.12
 uv venv --python-preference only-managed --python 3.12 .venv-mac
 uv pip install --python .venv-mac/bin/python -e ".[gui]" "pyinstaller>=6.6,<7"
-.venv-mac/bin/pyinstaller --onefile --name wzsearch --paths src packaging/wzsearch_entry.py
-.venv-mac/bin/pyinstaller --windowed --name wzsearch-gui --paths src \
+.venv-mac/bin/pyinstaller --onefile --name wzsearch-cli --paths src packaging/wzsearch_entry.py
+.venv-mac/bin/pyinstaller --windowed --name wzsearch --paths src \
     --collect-all tkinterdnd2 packaging/wzsearch_gui_entry.py
-open dist/wzsearch-gui.app
+open dist/wzsearch.app
 ```
 
 Sem build, direto do código (testar mais rápido):
@@ -276,7 +279,7 @@ Observações:
 - Os binários gerados rodam só na **arquitetura desta máquina** (arm64). Para
   Apple Intel, gere num Mac Intel (ou via CI com `macos-13`).
 - Binários copiados/baixados levam a marca de quarentena do Gatekeeper; se
-  reclamar, rode `xattr -d com.apple.quarantine dist/wzsearch-gui.app`.
+  reclamar, rode `xattr -d com.apple.quarantine dist/wzsearch.app`.
 - Alternativa ao `uv`: `brew install python-tk@3.12` instala o Tkinter no Python
   do Homebrew e o `.venv` normal passa a rodar a GUI.
 

@@ -48,7 +48,7 @@ jobs:
       - name: Build GUI (Windows)
         if: runner.os == 'Windows'
         run: >
-          pyinstaller --onefile --windowed --name wzsearch-gui --paths src
+          pyinstaller --onefile --windowed --name wzsearch --paths src
           --icon packaging\icon.ico
           --collect-all tkinterdnd2 --collect-all pillow_heif
           packaging/wzsearch_gui_entry.py

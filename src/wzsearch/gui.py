@@ -55,6 +55,16 @@ def _wheel_scroll(tree: ttk.Treeview, rows: int) -> None:
     tree.yview_scroll(rows, "units")
 
 
+def _is_inside(widget: tk.Misc, ancestor: tk.Misc) -> bool:
+    """Whether ``widget`` is ``ancestor`` or one of its descendants."""
+    node: tk.Misc | None = widget
+    while node is not None:
+        if node is ancestor:
+            return True
+        node = node.master
+    return False
+
+
 def default_output_name(source: Path | None, mode: str) -> str:
     """Suggest an output file name based on the export's name."""
     stem = source.stem if source is not None and source.stem else "conversa"
@@ -139,12 +149,18 @@ class WzsearchApp:
             on_changed=self._refresh,
             on_save=self._save,
             on_import=self._import,
+            on_analytics=self._refresh_analytics,
         )
         self.notebook.add(self.results, text="Explorar")
         self.analytics = AnalyticsView(self.notebook)
         self.notebook.add(self.analytics, text="Análises")
         self._tabs = {"Explorar": self.results, "Análises": self.analytics}
         bind_wheel(self.results.tree, partial(_wheel_scroll, self.results.tree))
+        # Safety net: anything over the analytics page that no widget claimed
+        # (new widgets, empty areas) still scrolls it.
+        self.root.bind("<MouseWheel>", self._catch_all_wheel, add="+")
+        self.root.bind("<Button-4>", lambda _event: self._scroll_analytics(-1), add="+")
+        self.root.bind("<Button-5>", lambda _event: self._scroll_analytics(1), add="+")
 
         bottom = ttk.Frame(self.root, padding=(10, 6, 10, 10))
         bottom.pack(fill="x")
@@ -163,6 +179,15 @@ class WzsearchApp:
         widget = self._tabs.get(name)
         if widget is not None:
             self.notebook.select(widget)  # type: ignore[no-untyped-call]
+
+    def _catch_all_wheel(self, event: tk.Event) -> None:
+        """Scroll the analytics page when nothing else handled the wheel."""
+        self._scroll_analytics(1 if int(getattr(event, "delta", 0) or 0) < 0 else -1)
+
+    def _scroll_analytics(self, rows: int) -> None:
+        widget = self.root.winfo_containing(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        if widget is not None and _is_inside(widget, self.analytics):
+            self.analytics.scroll(rows)
 
     def _new_window(self, title: str, size: str = "920x560") -> tk.Toplevel:
         window = tk.Toplevel(self.root)
@@ -216,7 +241,17 @@ class WzsearchApp:
     def _refresh(self) -> None:
         stored = self.store.rows()
         self.results.show(senders.rename_rows(stored))
+        self._refresh_analytics()
+        self._update_counts(stored)
+        for refresher in list(self._window_refreshers):
+            refresher()
+
+    def _refresh_analytics(self) -> None:
+        """Rebuild the analytics (used after toggling a row in the list)."""
         self.analytics.show(senders.rename_rows(self.store.rows(only_included=True)))
+
+    def _update_counts(self, stored: list[dict[str, object]] | None = None) -> None:
+        rows = self.store.rows() if stored is None else stored
         counts = self.store.counts()
         self.summary.configure(
             text=(
@@ -224,15 +259,13 @@ class WzsearchApp:
                 f" · lixeira {counts['deleted']}"
             )
         )
-        senders_count = len({str(row.get("remetente", "")) for row in stored})
+        senders_count = len({str(row.get("remetente", "")) for row in rows})
         self.ajustes.configure(
             text="⚙ Ajustes" if not counts["deleted"] else f"⚙ Ajustes ({counts['deleted']})"
         )
         self.ajustes_summary.configure(
             text=f"Remetentes {senders_count} · Lixeira {counts['deleted']}"
         )
-        for refresher in list(self._window_refreshers):
-            refresher()
 
     # -- actions ----------------------------------------------------------
     def _import(self, source: Path) -> None:

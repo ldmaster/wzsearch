@@ -103,6 +103,7 @@ class ResultsView(ttk.Frame):
         on_changed: Callable[[], None],
         on_save: Callable[[], None],
         on_import: Callable[[Path], None] | None = None,
+        on_analytics: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(master, padding=8)
         self._store = store
@@ -110,10 +111,12 @@ class ResultsView(ttk.Frame):
         self._on_changed = on_changed
         self._on_save = on_save
         self._on_import = on_import
+        self._on_analytics = on_analytics
         self._source: Path | None = None
         self._filter_job: str | None = None
-        self._rows: list[Mapping[str, Any]] = []
-        self._by_iid: dict[str, Mapping[str, Any]] = {}
+        self._rows: list[dict[str, Any]] = []
+        self._row_by_id: dict[int, dict[str, Any]] = {}
+        self._by_iid: dict[str, dict[str, Any]] = {}
         self._db_backed = False
         self._visible_columns: list[str] = list(_ALL_COLUMN_KEYS)
         self._column_vars: dict[str, tk.BooleanVar] = {}
@@ -219,7 +222,8 @@ class ResultsView(ttk.Frame):
         xscroll.pack(side="bottom", fill="x")
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._show_preview())
-        self.tree.bind("<Double-1>", lambda _event: self._open_viewer())
+        self.tree.bind("<Double-1>", self._on_double_click)
+        self.tree.bind("<Button-1>", self._on_click, add="+")
         self.tree.bind("<space>", self._on_space)
         panes.add(table, weight=3)
         panes.add(self._build_side(panes), weight=1)
@@ -302,7 +306,8 @@ class ResultsView(ttk.Frame):
     # -- data -------------------------------------------------------------
     def show(self, rows: Sequence[Mapping[str, Any]]) -> None:
         """Load rows into the table (stored rows carry ``id``)."""
-        self._rows = list(rows)
+        self._rows = [dict(row) for row in rows]
+        self._row_by_id = {int(row["id"]): row for row in self._rows if row.get("id") is not None}
         self._db_backed = bool(self._rows) and "id" in self._rows[0]
         senders = sorted(
             {str(row.get("remetente", "")) for row in self._rows if row.get("remetente")}
@@ -379,8 +384,14 @@ class ResultsView(ttk.Frame):
         self.tree.delete(*self.tree.get_children())
         self._by_iid = {}
         for index, row in enumerate(visible):
+            if self._db_backed:
+                key = int(str(row["id"]))
+                # Share the row object with ``self._rows`` so a toggle is seen
+                # by the next click, the cell refresh and the CSV export.
+                self._by_iid[str(key)] = self._row_by_id.get(key) or dict(row)
+            else:
+                self._by_iid[str(index)] = dict(row)
             iid = str(row["id"]) if self._db_backed else str(index)
-            self._by_iid[iid] = row
             self.tree.insert(
                 "", "end", iid=iid, values=[_cell(row, key) for key in _ALL_COLUMN_KEYS]
             )
@@ -404,18 +415,66 @@ class ResultsView(ttk.Frame):
         self._toggle()
         return "break"
 
+    def _on_checkbox_cell(self, event: tk.Event) -> str | None:
+        """The row whose ☑/☐ cell is under the pointer (``None`` when it is not)."""
+        if not self._db_backed or not self._visible_columns:
+            return None
+        if self._visible_columns[0] != "incluido":
+            return None
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return None
+        if self.tree.identify_column(event.x) != "#1":
+            return None
+        return self.tree.identify_row(event.y) or None
+
+    def _on_click(self, event: tk.Event) -> str | None:
+        """Toggle the ☑/☐ when the first column is clicked."""
+        iid = self._on_checkbox_cell(event)
+        if iid is None:
+            return None
+        row = self._by_iid.get(iid)
+        if row is None or row.get("id") is None:
+            return None
+        included = not bool(row.get("incluir"))
+        self._set_included([int(row["id"])], included)
+        self.tree.set(iid, "incluido", "☑" if included else "☐")
+        state = "dentro" if included else "fora"
+        self._on_status(f"{row.get('remetente', '')} agora está {state} da análise.")
+        return "break"
+
+    def _on_double_click(self, event: tk.Event) -> str | None:
+        """Open the viewer — except on the ☑/☐ column, which already toggled."""
+        if self._on_checkbox_cell(event) is not None:
+            return "break"
+        self._open_viewer()
+        return None
+
+    def _set_included(self, ids: list[int], included: bool) -> None:
+        """Persist the flag, update the cached rows and refresh the analytics."""
+        self._store.set_included(ids, included)
+        for row in self._rows:
+            if row.get("id") in ids:
+                row["incluir"] = 1 if included else 0
+        if self._on_analytics is not None:
+            self._on_analytics()
+
+    def _refresh_included_cells(self, ids: list[int]) -> None:
+        for iid, row in self._by_iid.items():
+            if row.get("id") in ids:
+                self.tree.set(iid, "incluido", "☑" if row.get("incluir") else "☐")
+
     def _toggle(self) -> None:
         if not self._db_backed:
-            self._on_status("A análise só existe para a lista de fotos (aba Fotos).", ok=False)
+            self._on_status("A análise só existe para a lista de fotos (aba Explorar).", ok=False)
             return
         ids = self._selected_ids()
         if not ids:
-            self._on_status("Selecione uma ou mais linhas.", ok=False)
+            self._on_status("Selecione uma linha (ou clique no ☑/☐ da primeira coluna).", ok=False)
             return
         rows = [row for row in self._rows if row.get("id") in ids]
         included = all(bool(row.get("incluir")) for row in rows)
-        self._store.set_included(ids, not included)
-        self._on_changed()
+        self._set_included(ids, not included)
+        self._refresh_included_cells(ids)
         state = "fora" if included else "dentro"
         self._on_status(f"{len(ids)} linha(s) agora {state} da análise.")
 
