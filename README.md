@@ -154,11 +154,13 @@ Os binários ficam nas **Releases** do repositório — baixáveis por qualquer 
 
 Baixe `wzsearch-windows.zip` e descompacte. Dentro dele:
 
-- **`wzsearch-gui.exe`** — a **tela gráfica** (recomendado para o usuário final):
-  duplo clique, arraste o export, escolha o nome/pasta e clique em *Gerar*.
-- `wzsearch.exe` — a versão de linha de comando.
-- `wzsearch.bat` — atalho: arraste o export em cima dele.
+- **`wzsearch-gui.exe`** — o app: duplo clique, arraste o export, escolha o
+  nome/pasta e clique em *Gerar*.
 - `COMO-USAR.txt` — instruções em linguagem simples.
+
+O pacote do Windows traz **só o executável da tela**. O antigo `wzsearch.bat`
+(que rodava a versão de linha de comando por arrastar-e-soltar) foi descontinuado.
+O CLI continua disponível para quem instala o pacote com `pip`/`uv`.
 
 Para gerar uma nova release, crie e envie uma tag:
 

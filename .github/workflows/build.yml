@@ -42,7 +42,8 @@ jobs:
       - name: Install GUI dependencies (Windows)
         if: runner.os == 'Windows'
         run: python -m pip install -e ".[gui]"
-      - name: Build CLI
+      - name: Build CLI (Linux)
+        if: runner.os != 'Windows'
         run: pyinstaller --onefile --name wzsearch --paths src packaging/wzsearch_entry.py
       - name: Build GUI (Windows)
         if: runner.os == 'Windows'
@@ -51,10 +52,10 @@ jobs:
           --icon packaging\icon.ico
           --collect-all tkinterdnd2 --collect-all pillow_heif
           packaging/wzsearch_gui_entry.py
-      - name: Add drag-and-drop helper (Windows)
+      - name: Add instructions (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Copy-Item packaging/windows/* dist/
+        run: Copy-Item packaging/windows/COMO-USAR.txt dist/
       - name: Package zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
