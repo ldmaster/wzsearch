@@ -297,3 +297,9 @@ uv run --python .venv/bin/python pytest
 
 Ler conversa ao vivo, enviar mensagens, automatizar o WhatsApp Web, ou busca por
 sentido/semântica.
+
+## Licença
+
+MIT — veja [`LICENSE`](LICENSE). Pode usar, modificar e redistribuir, inclusive
+comercialmente; o programa vem sem garantia e o conteúdo das conversas não sai da
+máquina de quem usa.
