@@ -187,6 +187,21 @@ def _text(row: Row, key: str) -> str:
     return str(row.get(key, "") or "")
 
 
+def _as_date(text: str) -> date | None:
+    """The day of a stored value, or ``None`` when it is not a date.
+
+    Records come from the parser, which always writes an ISO day, but a base can
+    hold anything (a hand-edited row, an import from an older version). Analytics
+    must never blow up over one odd value — it just ignores it.
+    """
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
 def is_pending(row: Row) -> bool:
     """Whether the row's media file was not included in the export."""
     return _text(row, "midia_pendente") == "sim"
@@ -399,14 +414,11 @@ def photo_stats(rows: Sequence[Row]) -> PhotoStats:
         if hour is not None:
             hours[hour] += 1
         day_text = _text(row, "data")
-        weekday: int | None = None
-        if day_text:
-            with contextlib.suppress(ValueError):
-                weekday = date.fromisoformat(day_text).weekday()
-        if weekday is not None:
-            weekdays[weekday] += 1
+        day = _as_date(day_text) if day_text else None
+        if day is not None:
+            weekdays[day.weekday()] += 1
             if hour is not None:
-                grid[weekday][hour] += 1
+                grid[day.weekday()][hour] += 1
         stamp_text = _text(row, "timestamp")
         if stamp_text:
             with contextlib.suppress(ValueError):
@@ -449,7 +461,9 @@ def photo_stats(rows: Sequence[Row]) -> PhotoStats:
         median_per_active_day=float(median(days.values())) if days else 0.0,
         avg_gap_hours=sum(gap_hours) / len(gap_hours) if gap_hours else None,
         median_gap_hours=median(gap_hours) if gap_hours else None,
-        longest_streak_days=_longest_streak([date.fromisoformat(day) for day in ordered_days]),
+        longest_streak_days=_longest_streak(
+            [day for text in ordered_days if (day := _as_date(text)) is not None]
+        ),
         with_caption=with_caption,
         caption_words=caption_words(rows),
         extensions=tuple(extensions.most_common()),

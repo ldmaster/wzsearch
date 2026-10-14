@@ -187,6 +187,21 @@ def test_filter_rows_only_auto() -> None:
     assert len(filter_rows(rows)) == 3
 
 
+def test_stats_survive_an_odd_value_in_the_base() -> None:
+    """Uma data fora do ISO não pode derrubar a aba de análises."""
+    rows: list[dict[str, Any]] = [
+        {"remetente": "Ana", "data": "2024-03-01", "hora": "10:00:00", "pontos": "abc"},
+        {"remetente": "Ana", "data": "12/03/2024", "hora": "10:00:00"},
+        {"remetente": "Ana", "data": "10:00:00", "hora": "2024-03-01"},
+        {"remetente": "Ana", "data": "", "hora": "", "timestamp": "2024-03-01"},
+    ]
+    stats = photo_stats(rows)
+    assert stats.total == 4
+    assert stats.longest_streak_days == 1  # só o dia válido conta
+    assert sum(stats.per_weekday) == 1
+    assert sum(sum(row) for row in stats.per_weekday_hour) == 1
+
+
 SITUACOES: list[dict[str, Any]] = [
     {"id": 1, "remetente": "Ana", "pontos": 2, "pontos_origem": "auto", "legenda": "treino"},
     {"id": 2, "remetente": "Ana", "pontos": 2, "pontos_origem": "confirmado", "legenda": "treino"},
