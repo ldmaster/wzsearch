@@ -3,6 +3,7 @@ from wzsearch.scroll import (
     MAX_ROWS_PER_EVENT,
     PIXELS_PER_ROW,
     rows_for_delta,
+    supports_touchpad_scroll,
     touchpad_rows,
     unpack_touchpad_delta,
 )
@@ -65,3 +66,12 @@ def test_touchpad_rows_follow_the_pixels() -> None:
     assert touchpad_rows(-PIXELS_PER_ROW * 99) == MAX_ROWS_PER_EVENT
     # delta puramente horizontal não rola na vertical
     assert touchpad_rows(65536) == 0
+
+
+def test_touchpad_scroll_is_only_bound_where_tk_knows_it() -> None:
+    """`<TouchpadScroll>` é do Tk 9; no 8.6 o bind levantaria TclError."""
+    assert supports_touchpad_scroll("9.0.4")
+    assert supports_touchpad_scroll("10.1")
+    assert not supports_touchpad_scroll("8.6.14")
+    assert not supports_touchpad_scroll("")
+    assert not supports_touchpad_scroll("sem versão")

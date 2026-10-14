@@ -26,6 +26,11 @@ jobs:
   # the app is compiled natively on Windows, macOS and Linux. Each job ships
   # the GUI only (the CLI stays with the pip/uv install) and uploads its zip,
   # which the release job attaches to the release.
+  #
+  # macOS gets two runners because the app can only be built for the
+  # architecture it runs on (Pillow's wheels are not universal2): the Apple
+  # Silicon one and the Intel one (macos-15-intel is the last x86_64 image,
+  # available until August 2027).
   build:
     needs: test
     if: github.event_name != 'pull_request'
@@ -36,7 +41,9 @@ jobs:
           - os: windows-latest
             asset: wzsearch-windows.zip
           - os: macos-latest
-            asset: wzsearch-macos.zip
+            asset: wzsearch-macos-arm64.zip
+          - os: macos-15-intel
+            asset: wzsearch-macos-intel.zip
           - os: ubuntu-latest
             asset: wzsearch-linux.zip
     runs-on: ${{ matrix.os }}
@@ -94,14 +101,14 @@ jobs:
         shell: pwsh
         run: >
           Compress-Archive -Path "dist/wzsearch.exe"
-          -DestinationPath "wzsearch-windows.zip" -Force
+          -DestinationPath "${{ matrix.asset }}" -Force
 
-      # universal2 so the same .app runs on Apple Silicon and Intel.
+      # Each runner compiles for its own architecture (Pillow's wheels are not
+      # universal2), which is why macOS has two runners.
       - name: Build the app (macOS)
         if: runner.os == 'macOS'
         run: >
           python -m PyInstaller --windowed --name wzsearch --paths src
-          --target-arch universal2
           --icon packaging/icon.icns
           --collect-all tkinterdnd2 --collect-all pillow_heif
           packaging/wzsearch_gui_entry.py
@@ -109,7 +116,9 @@ jobs:
       # ditto keeps the .app bundle structure and permissions intact.
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent dist/wzsearch.app wzsearch-macos.zip
+        run: >
+          ditto -c -k --sequesterRsrc --keepParent dist/wzsearch.app
+          "${{ matrix.asset }}"
 
       - name: Build the app (Linux)
         if: runner.os == 'Linux'
@@ -137,7 +146,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           chmod +x dist/wzsearch
-          zip -j wzsearch-linux.zip dist/wzsearch
+          zip -j "${{ matrix.asset }}" dist/wzsearch
 
       - uses: actions/upload-artifact@v4
         with:

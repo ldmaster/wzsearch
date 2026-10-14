@@ -192,8 +192,12 @@ Cada Release traz um zip por sistema, com **só o app de interface** dentro:
 | Sistema | Arquivo | O que tem dentro |
 | --- | --- | --- |
 | Windows | `wzsearch-windows.zip` | `wzsearch.exe` (duplo clique) |
-| macOS | `wzsearch-macos.zip` | `wzsearch.app` (arraste para *Aplicativos*) |
+| macOS Apple Silicon (M1–M4) | `wzsearch-macos-arm64.zip` | `wzsearch.app` (arraste para *Aplicativos*) |
+| macOS Intel | `wzsearch-macos-intel.zip` | `wzsearch.app` |
 | Linux | `wzsearch-linux.zip` | `wzsearch` (`chmod +x` e execute) |
+
+Para saber qual é o seu Mac: menu Apple → *Sobre este Mac* (ou `uname -m` no Terminal:
+`arm64` = Apple Silicon, `x86_64` = Intel).
 
 As instruções de uso estão na própria janela, no menu **Ajuda → Como usar…**. O antigo
 `wzsearch.bat` e o arquivo de instruções foram descontinuados, e o zip não traz mais o
@@ -211,8 +215,9 @@ Dá para testar a compilação sem publicar nada: em *Actions → build → Run 
 
 ### Observações dos binários
 
-- **macOS**: o app é compilado para Intel e Apple Silicon (`universal2`). Baixado da
-  internet ele leva a marca de quarentena do Gatekeeper; se o sistema reclamar, rode
+- **macOS**: cada zip traz um `.app` da sua arquitetura (o CI compila em um Mac Apple
+  Silicon e em um Intel — as bibliotecas de imagem não são universais). Baixado da
+  internet, ele leva a marca de quarentena do Gatekeeper; se o sistema reclamar, rode
   `xattr -dr com.apple.quarantine /Applications/wzsearch.app`.
 - **Linux**: o binário precisa de um ambiente gráfico (X11/Wayland) com Tk. O `wzsearch`
   é de uma arquitetura só (a do runner, x86_64) — em ARM, instale o pacote com `pip`.

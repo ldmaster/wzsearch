@@ -68,6 +68,31 @@ def touchpad_rows(delta: int | None) -> int:
     return direction * steps
 
 
+#: ``<TouchpadScroll>`` is a Tk 9 event: binding it on Tk 8.6 raises TclError.
+_TOUCHPAD_MIN_MAJOR = 9
+
+
+def _major_version(patchlevel: str) -> int:
+    """Major version out of Tk's ``patchlevel`` (``"9.0.4"`` -> ``9``)."""
+    try:
+        return int(patchlevel.split(".")[0])
+    except (IndexError, ValueError):
+        return 0
+
+
+def supports_touchpad_scroll(patchlevel: str) -> bool:
+    """Whether this Tk understands the ``<TouchpadScroll>`` event."""
+    return _major_version(patchlevel) >= _TOUCHPAD_MIN_MAJOR
+
+
+def tk_patchlevel(widget: tk.Misc) -> str:
+    """The Tk version of the interpreter the widget belongs to."""
+    try:
+        return str(widget.tk.call("info", "patchlevel"))
+    except tk.TclError:  # pragma: no cover - no interpreter: nothing to bind
+        return ""
+
+
 def bind_wheel(widget: tk.Misc, scroll_by: Callable[[int], None]) -> None:
     """Route wheel/trackpad scrolling on ``widget`` through ``scroll_by``."""
 
@@ -96,9 +121,10 @@ def bind_wheel(widget: tk.Misc, scroll_by: Callable[[int], None]) -> None:
         return "break"
 
     widget.bind("<MouseWheel>", on_wheel, add="+")
-    widget.bind("<TouchpadScroll>", on_touchpad, add="+")
     widget.bind("<Button-4>", on_up, add="+")
     widget.bind("<Button-5>", on_down, add="+")
+    if supports_touchpad_scroll(tk_patchlevel(widget)):
+        widget.bind("<TouchpadScroll>", on_touchpad, add="+")
 
 
 def bind_wheel_tree(widget: tk.Misc, scroll_by: Callable[[int], None]) -> None:

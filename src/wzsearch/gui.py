@@ -35,7 +35,13 @@ from .pipeline import (
     WzsearchError,
     import_photos,
 )
-from .scroll import bind_wheel, rows_for_delta, touchpad_rows
+from .scroll import (
+    bind_wheel,
+    rows_for_delta,
+    supports_touchpad_scroll,
+    tk_patchlevel,
+    touchpad_rows,
+)
 from .store import Store
 from .writer import DB_COLUMNS, write_rows
 
@@ -174,8 +180,10 @@ class WzsearchApp:
         self.root.bind_all("<MouseWheel>", self._on_wheel, add="+")
         # Tk 9 on macOS reports trackpads and "smooth" mice as TouchpadScroll
         # (pixels), an event the canvas has no binding for — without this the
-        # Análises page only scrolled over the scrollbar.
-        self.root.bind_all("<TouchpadScroll>", self._on_touchpad, add="+")
+        # Análises page only scrolled over the scrollbar. Tk 8.6 has no such
+        # event, so it is only bound where it exists.
+        if supports_touchpad_scroll(tk_patchlevel(self.root)):
+            self.root.bind_all("<TouchpadScroll>", self._on_touchpad, add="+")
         self.root.bind_all("<Button-4>", lambda event: self._on_wheel_button(event, -1), add="+")
         self.root.bind_all("<Button-5>", lambda event: self._on_wheel_button(event, 1), add="+")
 
