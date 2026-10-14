@@ -117,6 +117,38 @@ crescer, só as mensagens novas entram. Para forçar um arquivo novo, use
 `--overwrite`. Se o CSV existente tiver outro cabeçalho (ex.: de outro modo), o
 programa avisa e para, em vez de misturar formatos.
 
+O nome do arquivo do export **não** entra nessa identidade: o WhatsApp chama a
+segunda exportação da mesma conversa de `… (1).zip`, e comparar o nome faria o
+CSV repetir tudo o que já estava lá.
+
+## Exportar a conversa com as mídias
+
+O app lê o que o WhatsApp entrega — então vale exportar direito:
+
+- **Android**: abra a conversa → **⋮** (três pontinhos) → **Mais** → **Exportar conversa**
+  → marque **“Incluir mídia”** → escolha para onde mandar (Arquivos, e-mail, Drive…).
+- **iPhone**: abra a conversa → toque no **nome do contato/grupo** no topo → role até
+  **Exportar conversa** → escolha **“Anexar mídia”** → salve em Arquivos.
+- O resultado é um **`.zip`** com o texto da conversa **e** as fotos. É esse `.zip` que o
+  wzsearch lê (o `.txt` sozinho funciona, mas só com o texto).
+
+Limitações (do WhatsApp, não do app):
+
+- **Sem marcar a mídia** vem só o texto — e toda foto aparece como **“sem o arquivo no
+  export”** na tela (a linha existe, com a legenda, mas sem imagem nem metadados).
+- **Conversa grande**: o WhatsApp quebra a exportação em vários `.zip` (…, …(1), …(2)).
+  Importe todos, um por vez — nada é duplicado e só o que falta é acrescentado.
+- **Limite de tamanho**: mesmo com “Incluir mídia” marcado, o WhatsApp costuma deixar
+  arquivos antigos de fora.
+- **O que nunca vem**: mídia que expirou, que foi vista uma única vez, que foi apagada ou
+  que aparece como “Mídia oculta” (o export não diz nem se era foto, vídeo ou documento).
+- **Nomes e metadados**: todo arquivo chega renomeado como `IMG-AAAAMMDD-WA####` (a data é
+  a que o WhatsApp usou) e **sem EXIF** — data de captura, câmera e GPS normalmente não
+  existem. É por isso que a auditoria mostra o que existe de verdade: nome, tamanho,
+  dimensões e a comparação entre a data do nome e a data da mensagem.
+- **Nada é baixado nem copiado**: o app lê a mídia de dentro do `.zip`, direto para a
+  memória, e nada sai da máquina.
+
 ## Decisões de projeto
 
 - **`numero_extraido` virou colunas separadas**: `telefone_remetente` (telefone de
@@ -148,56 +180,154 @@ nenhuma conversa real.
 Nada é enviado para a internet: o programa **roda offline**. Nenhuma informação
 sobre as conversas — mensagens, fotos, nomes, números — sai da máquina.
 
-## Baixar o executável (sem instalar Python)
+## Baixar o app (sem instalar Python)
 
 Os binários ficam nas **Releases** do repositório — baixáveis por qualquer pessoa,
 **sem login no GitHub**:
 
 - https://github.com/ldmaster/wzsearch/releases
 
-Baixe `wzsearch-windows.zip` e descompacte: dentro dele há **só o `wzsearch.exe`**
-(duplo clique para abrir) — as instruções de uso estão na própria janela, no menu
-**Ajuda → Como usar…**. O antigo `wzsearch.bat` e o arquivo de instruções foram
-descontinuados. O CLI continua disponível para quem instala o pacote com `pip`/`uv`.
+Cada Release traz um zip por sistema, com **só o app de interface** dentro:
+
+| Sistema | Arquivo | O que tem dentro |
+| --- | --- | --- |
+| Windows | `wzsearch-windows.zip` | `wzsearch.exe` (duplo clique) |
+| macOS | `wzsearch-macos.zip` | `wzsearch.app` (arraste para *Aplicativos*) |
+| Linux | `wzsearch-linux.zip` | `wzsearch` (`chmod +x` e execute) |
+
+As instruções de uso estão na própria janela, no menu **Ajuda → Como usar…**. O antigo
+`wzsearch.bat` e o arquivo de instruções foram descontinuados, e o zip não traz mais o
+CLI: quem quiser a linha de comando instala o pacote com `pip`/`uv`.
 
 Para gerar uma nova release, crie e envie uma tag:
 
 ```bash
-git tag v0.9.0
-git push origin v0.9.0
+git tag v0.10.0
+git push origin v0.10.0
 ```
 
-O workflow compila **o executável do Windows** e anexa o zip ao Release. O app do
-macOS é construído **apenas localmente** (`./scripts/build_macos.sh`) e não vai para
-o Release.
+O workflow compila os **três** apps (Windows, macOS e Linux) e anexa os zips ao Release.
+Dá para testar a compilação sem publicar nada: em *Actions → build → Run workflow*.
+
+### Observações dos binários
+
+- **macOS**: o app é compilado para Intel e Apple Silicon (`universal2`). Baixado da
+  internet ele leva a marca de quarentena do Gatekeeper; se o sistema reclamar, rode
+  `xattr -dr com.apple.quarantine /Applications/wzsearch.app`.
+- **Linux**: o binário precisa de um ambiente gráfico (X11/Wayland) com Tk. O `wzsearch`
+  é de uma arquitetura só (a do runner, x86_64) — em ARM, instale o pacote com `pip`.
+- **Windows**: o executável carrega a versão nas Propriedades (recurso PE).
 
 ## Tela gráfica (GUI)
 
 Duas abas de trabalho + menus:
 
 - **Explorar** — a tela principal. Arraste o export (`.zip`/`.txt`) e clique em
-  **Gerar**: as fotos vão para uma **base local** e ficam salvas entre sessões
-  (reimportar o mesmo export não duplica). A lista tem **busca por termo ou regex**,
-  filtros (remetente, período, só pendentes), **☑ incluir/excluir da análise**
-  (botão ou tecla Espaço), **Excluir** (manda para a lixeira), **prévia da foto**,
+  **Gerar**: as fotos vão para uma **base local** e ficam salvas entre sessões.
+  Reimportar **nunca duplica**: a identidade de cada foto é a mensagem em si (chat,
+  data/hora, remetente, arquivo e legenda), não o nome do arquivo do export — então
+  exportar a conversa de novo (o WhatsApp chama a segunda de `… (1).zip`) e apontar para
+  ela só acrescenta o que é novo. E se você importou **só o texto** antes, importar o
+  `.zip` depois **completa** aquelas fotos que estavam “sem o arquivo no export” em vez
+  de criar linhas repetidas — o status do rodapé diz quantas foram completadas.
+  A lista tem **busca por termo ou regex**,
+  filtros (remetente, período, só sem arquivo, só sugestões automáticas),
+  **☑ incluir/excluir da análise** (botão ou tecla Espaço), **Pontos** (ver abaixo),
+  **ordenação clicando no título da coluna** (clique de novo para inverter; ▲/▼ marca a
+  coluna em uso), **dicas ao passar o mouse** sobre títulos, filtros e botões,
+  **Excluir** (manda para a lixeira), **prévia da foto**,
   **visualizador** (duplo clique), **Colunas…** e **Salvar CSV…**.
-- **Análises** — frequência de postagem: total/mídias pendentes, período, **tabela por
-  remetente** (fotos, %, com arquivo, pendentes, dias ativos, 1ª e última foto),
-  **mapa de calor dia da semana × hora** ("quando postam"), picos (hora/dia/mês mais
-  ativos), **palavras mais usadas nas legendas**, **tipos de arquivo**, fotos por
+- **Análises** — frequência de postagem: total/mídias **sem o arquivo no export**, período, **tabela por
+  remetente** (fotos, %, com arquivo, sem arquivo, pontos, fotos de exercício, dias ativos,
+  1ª e última foto — ordenável clicando no título da coluna), **pontuação total e média**,
+  **mapa de calor dia da semana × hora**
+  ("quando postam"), picos (hora/dia/mês mais ativos), **palavras mais usadas nas
+  legendas**, **tipos de arquivo**, **pontos por remetente**, fotos por
   dia/mês/hora/dia da semana, dias mais movimentados, concentração (top 3),
   mais/menos ativa, média e mediana por dia ativo, intervalo médio/mediano entre
   fotos e maior sequência de dias seguidos. Só entram as fotos **ativas e marcadas**, e
-  um **filtro no topo** mostra o **geral** ou **por remetente**.
+  um **filtro no topo** mostra o **geral** ou **por remetente**. Cada número, gráfico e
+  coluna tem uma **dica** explicando o que é — passe o mouse por cima. A roda rola a
+  página com o ponteiro em qualquer ponto dela; a tabela **Por remetente** é a exceção
+  (altura fixa, rola por dentro com barra própria), para a lista poder crescer.
 - **⚙ Ajustes** (canto superior direito) — **Remetentes** (dar nome a quem aparece como
   número; o nome vale na lista, nos filtros e nas Análises), **Lixeira** (restaurar ou
-  excluir de vez) e **Dados e backup** (backup num `.zip`, restaurar, apagar tudo).
+  excluir de vez), **Auditoria de pontuação** (ver abaixo) e **Dados e backup**
+  (backup num `.zip`, restaurar, apagar tudo).
 - **Menu Ajuda** — *Como usar…* abre uma janela com **tópicos** à esquerda (Começando,
-  Explorar, Análises, Remetentes, Lixeira, Dados, Privacidade), conteúdo formatado à
-  direita e um botão que leva direto para a aba. *Sobre o wzsearch* mostra versão e autor.
+  Exportar com as mídias, Explorar, Pontuação, Análises, Auditoria da pontuação,
+  Remetentes, Lixeira, Dados, Privacidade), conteúdo formatado à direita
+  e um botão que leva direto para a aba. *Sobre o wzsearch* mostra versão e autor.
 
 Ideias de evolução da interface estão em [`docs/ui-ideias.md`](docs/ui-ideias.md) e os
 protótipos clicáveis em [`docs/ui-prototipos.html`](docs/ui-prototipos.html).
+
+### Pontuação por foto
+
+Cada foto vale **no mínimo 1 ponto**, e vale **2 quando é foto de exercício**. O ajuste
+é no próprio registro, na coluna **Pontos** da lista:
+
+```
+│ ☑ │ Pontos │ Remetente │ Data       │ Legenda            │
+│ ☑ │ − 2 +  │ Ana       │ 2024-03-01 │ treino de hoje 💪  │
+```
+
+- Clique na **metade da esquerda** da célula (`−`) para tirar um ponto e na **metade da
+  direita** (`+`) para somar. Também vale selecionar várias linhas e usar o menu
+  **Pontos ▾** da barra de cima, ou as teclas `+` e `−`.
+- O mínimo é **1**: o `−` nunca deixa a foto abaixo disso. Não há máximo — a pontuação
+  também serve como peso, se você quiser dar 3 ou mais para uma foto.
+- Foto de exercício já entra valendo 2 sozinha: o app procura na **legenda** e na
+  **mensagem seguinte da mesma pessoa** palavras como *treino, academia, corrida, bike,
+  caminhada, natação, futebol, crossfit* (a lista fica em `src/wzsearch/score.py`, fácil
+  de aumentar). Essa leitura é feita **offline**, sem modelo e sem rede.
+- A base que **já existia** é avaliada sozinha: ao abrir o app, as fotos que a legenda
+  marca viram 2 pontos sem nenhum clique (e as que ficam em 1 ponto continuam em 1).
+  Ao importar um export novo, a avaliação já acontece na entrada das fotos.
+- O que veio da legenda é uma **sugestão**: essas linhas ficam com a cor da pontuação na
+  lista, o filtro **só sugestões automáticas** mostra só elas, e as Análises dizem quantas
+  faltam revisar. Assim que você **ajusta** ou **confirma** uma delas na auditoria, o app
+  não mexe mais nessa linha — o **Reavaliar pelas legendas** recalcula apenas as que você
+  não decidiu.
+- Na aba **Análises** entram **pontuação total**, **média de pontos por foto**, **fotos de
+  exercício (2 pts)**, **sugestões a revisar**, as colunas **Pontos** e **2 pts** na tabela
+  por remetente e um gráfico de **pontos por remetente**. O filtro de remetente do topo
+  vale para tudo isso.
+- No **Salvar CSV…**, as colunas `pontos`, `pontos_origem` e `pontos_motivo` vão no fim do
+  arquivo. O CSV
+  do CLI (`--photos`) **não** muda, para não quebrar a regra de acrescentar só as linhas
+  novas em arquivos que já existem.
+- Ajustou ou confirmou uma sugestão? Escreva o **motivo** na auditoria: ele fica gravado na
+  foto (coluna “Seu motivo”) e no CSV, para você lembrar depois por que aquela foto saiu
+  do padrão.
+
+Nada disso sai da máquina: a pontuação mora no mesmo banco local das fotos.
+
+### Auditoria de pontuação
+
+Em **⚙ Ajustes → Auditoria de pontuação…** há uma janela só para conferir a pontuação —
+é onde dá para confiar no que a legenda sugeriu:
+
+- O topo resume: `N foto(s) · X ponto(s) · Y sugestão(ões) a revisar · Z ajuste(s) seu(s)`,
+  mais quantas ficaram **fora do padrão** (3 pontos ou mais).
+- O filtro **Mostrar:** separa as situações — *Sugestões a revisar*, *Sugestões
+  confirmadas*, *Ajustadas por você*, *3+ pontos*, *Já decididas* e *Todas as fotos* — e
+  pode ser combinado com um remetente.
+- A coluna **Sugerido por** diz qual palavra casou e onde ela apareceu (na legenda ou na
+  mensagem seguinte da mesma pessoa) — sem a legenda, a própria coluna “Legenda” da
+  tabela ajuda a bater o olho.
+- O painel da direita mostra **a foto** da linha selecionada (leitura direta do banco;
+  duplo clique abre grande) e, embaixo, o que **o arquivo diz**: nome, tamanho, dimensões,
+  orientação e, quando o EXIF sobreviveu, data de captura e câmera — junto da comparação
+  entre a data do nome e a data da mensagem (é o que pega foto encaminhada).
+- **Motivo do ajuste**: escreva por que você está mexendo na pontuação (ex. “era o café,
+  a legenda seguinte falava de outra pessoa”) antes de confirmar/ajustar. O texto fica
+  gravado na foto — coluna **“Seu motivo”** na lista e na auditoria, e no CSV — e é
+  aplicado às linhas selecionadas de uma vez.
+- **Confirmar sugestão** aceita o valor como está e tira a linha das pendências;
+  **+1 ponto** / **−1 ponto** corrigem (e a linha passa a ser sua, fora do alcance do
+  “Reavaliar”); **Reavaliar pelas legendas** refaz a leitura de tudo que você não decidiu.
+- As colunas ordenam clicando no título, como nas outras tabelas.
 
 ### Onde ficam os dados
 

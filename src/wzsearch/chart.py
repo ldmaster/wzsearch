@@ -70,7 +70,7 @@ class BarChart(ttk.Frame):
 
     @staticmethod
     def _short(label: str) -> str:
-        return label if len(label) <= 6 else label[-5:]
+        return label if len(label) <= 6 else label[:6] + "…"
 
 
 class Heatmap(ttk.Frame):

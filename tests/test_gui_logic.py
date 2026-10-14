@@ -9,6 +9,21 @@ from wzsearch.gui import (  # noqa: E402
     default_output_name,
     validate_source,
 )
+from wzsearch.gui_results import _cell, _sort_value  # noqa: E402
+
+
+def test_score_cell_shows_both_clickable_halves() -> None:
+    assert _cell({"pontos": 1}, "pontos") == "− 1 +"
+    assert _cell({"pontos": 3, "pontos_origem": "manual"}, "pontos") == "− 3 +"
+
+
+def test_sort_value_is_numeric_where_it_matters() -> None:
+    assert _sort_value({"pontos": 2}, "pontos") == 2
+    assert _sort_value({"incluir": 0}, "incluido") == 0
+    assert _sort_value({"incluir": 1}, "incluido") == 1
+    assert _sort_value({"legenda": "ANA"}, "legenda") == "ana"
+    assert _sort_value({"legenda": ""}, "legenda") == ""
+    assert _sort_value({}, "foto_arquivo") == ""
 
 
 def test_default_output_name_per_mode() -> None:

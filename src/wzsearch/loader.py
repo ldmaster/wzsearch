@@ -7,6 +7,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import identity
 from .media import normalize_media_name
 
 _CHAT_NAME_RE = re.compile(
@@ -48,8 +49,8 @@ def _clean(text: str) -> str:
 def _chat_name_from_stem(stem: str) -> str:
     match = _CHAT_NAME_RE.match(stem)
     if match is not None:
-        return match.group("name").strip()
-    return stem
+        return identity.strip_copy_suffix(match.group("name").strip())
+    return identity.strip_copy_suffix(stem)
 
 
 def _chat_name(path: Path, member: str) -> str:

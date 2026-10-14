@@ -1,7 +1,8 @@
 """Frequency analytics over generated photo rows.
 
 Pure functions with no GUI dependency, so they are easy to test. Rows are the
-dicts produced by :mod:`wzsearch.pipeline` (photo listing).
+dicts produced by :mod:`wzsearch.pipeline` (photo listing), extended with the
+score columns the store keeps.
 """
 
 from __future__ import annotations
@@ -14,6 +15,15 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from statistics import median
+
+from .score import (
+    ORIGEM_AUTO,
+    ORIGEM_CONFIRMADO,
+    ORIGEM_MANUAL,
+    PONTOS_EXERCICIO,
+    PONTOS_MIN,
+    match_reason,
+)
 
 Row = Mapping[str, object]
 
@@ -123,6 +133,8 @@ class SenderDetail:
     active_days: int
     first: str | None
     last: str | None
+    points: int
+    exercise: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +144,10 @@ class PhotoStats:
     total: int
     with_file: int
     pending: int
+    total_points: int
+    avg_points: float
+    exercise: int
+    auto_points: int
     participants: tuple[tuple[str, int], ...]
     per_day: tuple[tuple[str, int], ...]
     per_month: tuple[tuple[str, int], ...]
@@ -176,6 +192,113 @@ def is_pending(row: Row) -> bool:
     return _text(row, "midia_pendente") == "sim"
 
 
+def points_of(row: Row) -> int:
+    """Score of a record (missing or unreadable values count as the minimum)."""
+    raw = row.get("pontos", PONTOS_MIN)
+    try:
+        return max(int(str(raw)), PONTOS_MIN)
+    except (TypeError, ValueError):
+        return PONTOS_MIN
+
+
+def is_scored_as_exercise(row: Row) -> bool:
+    """Whether the record scores as an exercise photo (two points or more)."""
+    return points_of(row) >= PONTOS_EXERCICIO
+
+
+def is_auto_scored(row: Row) -> bool:
+    """Whether the score came from the caption instead of a manual adjustment."""
+    return _text(row, "pontos_origem") == ORIGEM_AUTO
+
+
+#: (key, label) of every situation the score audit can show, in menu order.
+SITUATIONS: tuple[tuple[str, str], ...] = (
+    ("auto", "Sugestões a revisar"),
+    ("confirmado", "Sugestões confirmadas"),
+    ("manual", "Ajustadas por você"),
+    ("alto", "3+ pontos (fora do padrão)"),
+    ("revisadas", "Já decididas (suas ou confirmadas)"),
+    ("todas", "Todas as fotos"),
+)
+
+
+def score_situation(row: Row) -> str:
+    """Which situation a record is in, as a key of :data:`SITUATIONS`."""
+    origin = _text(row, "pontos_origem")
+    if origin == ORIGEM_CONFIRMADO:
+        return "confirmado"
+    if origin == ORIGEM_MANUAL:
+        return "manual"
+    if origin == ORIGEM_AUTO:
+        return "auto"
+    return "sem_sugestao"
+
+
+def situation_label(row: Row) -> str:
+    """Human wording of :func:`score_situation` (what the audit table shows)."""
+    points = points_of(row)
+    if points > PONTOS_EXERCICIO:
+        return f"{points} pontos (fora do padrão)"
+    return {
+        "auto": "Sugestão a revisar",
+        "confirmado": "Sugestão confirmada",
+        "manual": "Ajustada por você",
+        "sem_sugestao": "1 ponto (sem sugestão)",
+    }[score_situation(row)]
+
+
+def score_reason(row: Row) -> str:
+    """Why a record has the score it has (empty when nothing decided it)."""
+    situation = score_situation(row)
+    if situation in {"auto", "confirmado"}:
+        return match_reason(row) or "sugerida pela legenda"
+    if situation == "manual":
+        return "ajustada por você"
+    return ""
+
+
+def matches_situation(row: Row, situation: str, sender: str | None = None) -> bool:
+    """Whether a record belongs in the audit for the chosen situation and sender."""
+    if sender is not None and _text(row, "remetente") != sender:
+        return False
+    if situation == "todas":
+        return True
+    if situation == "alto":
+        return points_of(row) > PONTOS_EXERCICIO
+    if situation == "revisadas":
+        return score_situation(row) in {"manual", "confirmado"}
+    return score_situation(row) == situation
+
+
+def audit_rows(rows: Sequence[Row], situation: str, sender: str | None = None) -> list[Row]:
+    """The rows the score audit shows for a situation (all of them by default)."""
+    return [row for row in rows if matches_situation(row, situation, sender)]
+
+
+@dataclass(frozen=True, slots=True)
+class ScoreAudit:
+    """Totals shown at the top of the score audit."""
+
+    photos: int
+    points: int
+    suggestions: int
+    confirmed: int
+    manual: int
+    over: int
+
+
+def score_audit(rows: Sequence[Row]) -> ScoreAudit:
+    """Count the records by situation, for the audit header."""
+    return ScoreAudit(
+        photos=len(rows),
+        points=sum(points_of(row) for row in rows),
+        suggestions=sum(1 for row in rows if score_situation(row) == "auto"),
+        confirmed=sum(1 for row in rows if score_situation(row) == "confirmado"),
+        manual=sum(1 for row in rows if score_situation(row) == "manual"),
+        over=sum(1 for row in rows if points_of(row) > PONTOS_EXERCICIO),
+    )
+
+
 def filter_rows(
     rows: Sequence[Row],
     *,
@@ -183,6 +306,7 @@ def filter_rows(
     start: str | None = None,
     end: str | None = None,
     only_pending: bool = False,
+    only_auto: bool = False,
 ) -> list[Row]:
     """Return the rows matching the given filters (all optional)."""
     result: list[Row] = []
@@ -195,6 +319,8 @@ def filter_rows(
         if end and day and day > end:
             continue
         if only_pending and not is_pending(row):
+            continue
+        if only_auto and not is_auto_scored(row):
             continue
         result.append(row)
     return result
@@ -228,6 +354,8 @@ def sender_details(rows: Sequence[Row]) -> tuple[SenderDetail, ...]:
                 active_days=len(days),
                 first=ordered[0] if ordered else None,
                 last=ordered[-1] if ordered else None,
+                points=sum(points_of(row) for row in group),
+                exercise=sum(1 for row in group if is_scored_as_exercise(row)),
             )
         )
     details.sort(key=lambda item: item.count, reverse=True)
@@ -297,11 +425,16 @@ def photo_stats(rows: Sequence[Row]) -> PhotoStats:
     active = len(ordered_days)
     total = len(rows)
     top3 = sum(count for _, count in senders.most_common(3))
+    total_points = sum(points_of(row) for row in rows)
 
     return PhotoStats(
         total=total,
         with_file=sum(1 for row in rows if _text(row, "foto_existe") == "sim"),
         pending=sum(1 for row in rows if is_pending(row)),
+        total_points=total_points,
+        avg_points=total_points / total if total else 0.0,
+        exercise=sum(1 for row in rows if is_scored_as_exercise(row)),
+        auto_points=sum(1 for row in rows if is_auto_scored(row)),
         participants=tuple(senders.most_common()),
         per_day=tuple(sorted(days.items())),
         per_month=tuple(sorted(months.items())),

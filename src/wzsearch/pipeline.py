@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from itertools import count
 from pathlib import Path
 
+from . import identity
 from .loader import load_export, read_media_bytes
 from .media import is_photo, strip_media_placeholders
 from .models import Message
@@ -20,7 +21,6 @@ from .numbers import extract_numbers, format_numbers, sender_phone
 from .parser import parse_chat
 from .search import SearchTerm, build_terms
 from .store import Store
-from .store import row_key as store_row_key
 from .writer import (
     COLUMNS,
     PHOTO_COLUMNS,
@@ -185,6 +185,7 @@ def _iter_photo_rows(
     include_system: bool,
 ) -> Iterator[dict[str, object]]:
     counter = count(1)
+    counters: dict[str, int] = {}
     for chat_name, source_name, messages in parsed:
         contexts = _next_sender_contexts(messages)
         for index, message in enumerate(messages):
@@ -192,7 +193,7 @@ def _iter_photo_rows(
                 continue
             if not (is_photo(message.media) or message.media.omitted):
                 continue
-            yield _photo_row(
+            row = _photo_row(
                 photo_id=next(counter),
                 message=message,
                 chat_name=chat_name,
@@ -200,6 +201,14 @@ def _iter_photo_rows(
                 linked=message.media.exists_in_export,
                 contexto_provavel=contexts[index],
             )
+            # A identidade que faz a reimportação ser idempotente: a assinatura da
+            # mensagem mais quantas vezes ela já apareceu neste export (duas
+            # <Mídia oculta> iguais no mesmo segundo, por exemplo).
+            signature = identity.signature_of(row)
+            counters[signature] = counters.get(signature, 0) + 1
+            row["assinatura"] = signature
+            row["ocorrencia"] = counters[signature]
+            yield row
 
 
 def _deduplicate(
@@ -385,6 +394,7 @@ class ImportResult:
     added: int
     skipped: int
     label: str = "foto(s)"
+    enriched: int = 0
 
 
 def import_photos(
@@ -398,14 +408,15 @@ def import_photos(
 ) -> ImportResult:
     """Import the photo listing into ``store`` (embedding media when asked).
 
-    Media bytes are read from the export; records already present (same key)
-    are ignored, so importing the same export twice adds nothing.
+    Media bytes are read from the export; records already present (same
+    identity) are completed with the file when the export finally brings it,
+    and nothing is added twice — importing the same export again adds nothing.
     """
     rows = collect_photos(inputs, eu=eu, chat=chat, include_system=include_system)
-    media: dict[str, bytes] = {}
+    media: dict[int, bytes] = {}
     if store_media:
         by_name = {path.name: path for path in inputs}
-        for row in rows:
+        for position, row in enumerate(rows):
             source_name, separator, filename = str(row.get("foto_evidencia", "") or "").partition(
                 "::"
             )
@@ -416,6 +427,10 @@ def import_photos(
                 continue
             data = read_media_bytes(source_path, filename)
             if data is not None:
-                media[store_row_key(row)] = data
-    added = store.add_rows(rows, media=media)
-    return ImportResult(added=added, skipped=len(rows) - added)
+                media[position] = data
+    result = store.add_rows(rows, media=media)
+    return ImportResult(
+        added=result.added,
+        skipped=len(rows) - result.added,
+        enriched=result.enriched,
+    )

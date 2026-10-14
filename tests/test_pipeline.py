@@ -42,6 +42,22 @@ def test_generate_photos_is_incremental(tmp_path: Path) -> None:
     assert result.skipped == 1
 
 
+def test_generate_photos_ignores_the_renamed_export(tmp_path: Path) -> None:
+    """O CSV não ganha linha repetida quando o export é reexportado como ' (1)'."""
+    out = tmp_path / "fotos.csv"
+    primeiro = tmp_path / "Conversa do WhatsApp com Grupo.zip"
+    _photo_zip(primeiro)
+    generate_photos([primeiro], out)
+
+    segundo = tmp_path / "Conversa do WhatsApp com Grupo (1).zip"
+    _photo_zip(segundo)
+    result = generate_photos([segundo], out)
+
+    assert result.added == 0
+    assert result.skipped == 1
+    assert len(out.read_text(encoding="utf-8-sig").strip().splitlines()) == 2  # header + 1
+
+
 def test_generate_search_reports_invalid_regex(tmp_path: Path) -> None:
     source = FIXTURES / "chat_android_pt.txt"
     with pytest.raises(WzsearchError) as excinfo:

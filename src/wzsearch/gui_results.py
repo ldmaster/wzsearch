@@ -10,9 +10,11 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Literal, Protocol
 
-from . import avatars, images
-from .analytics import filter_rows
+from . import avatars, images, score
+from .analytics import filter_rows, points_of
 from .dnd import dnd_available, register_drop
+from .hint import add_hints, add_tree_hints
+from .sorting import Sortable, heading_label, sort_items
 from .store import Store
 
 _PREVIEW_BOX = 260
@@ -24,6 +26,9 @@ _ALL_SENDERS = "(todos)"
 _CELL_TEXT = 80
 _PREVIEW_DELAY_MS = 60
 _FILTER_DELAY_MS = 200
+
+#: Colour of the rows worth two points or more (readable on light and dark).
+_POINTED_COLOUR = "#1a7f37"
 
 _EXPORT_TYPES = [("Export do WhatsApp", "*.zip *.txt"), ("Todos os arquivos", "*.*")]
 
@@ -51,12 +56,17 @@ _DETAIL_KEYS = (
     "foto_arquivo",
     "foto_existe",
     "midia_pendente",
+    "pontos",
+    "pontos_origem",
+    "pontos_motivo",
     "status",
 )
 
 #: (column key, heading, width, anchor) — everything the table can show.
 _DISPLAY_COLUMNS: tuple[tuple[str, str, int, Literal["w", "center"]], ...] = (
     ("incluido", "Incluído", 70, "center"),
+    ("pontos", "Pontos", 90, "center"),
+    ("pontos_motivo", "Seu motivo", 200, "w"),
     ("remetente", "Remetente", 170, "w"),
     ("telefone_remetente", "Telefone", 130, "w"),
     ("data", "Data", 90, "w"),
@@ -66,13 +76,40 @@ _DISPLAY_COLUMNS: tuple[tuple[str, str, int, Literal["w", "center"]], ...] = (
     ("contexto_provavel", "Contexto provável", 200, "w"),
     ("foto_arquivo", "Arquivo", 200, "w"),
     ("foto_existe", "Tem arquivo", 90, "center"),
-    ("midia_pendente", "Pendente", 80, "center"),
+    ("midia_pendente", "Sem arquivo", 90, "center"),
 )
+
+#: What each column means (shown when the pointer rests on the heading).
+_COLUMN_HINTS = {
+    "incluido": "☑ marca a linha para entrar nas Análises (clique na célula ou use a "
+    "tecla Espaço). Desmarcada, a foto fica só na lista.",
+    "pontos": "Pontuação do registro: 1 ponto por padrão, 2 quando a legenda sugere "
+    "exercício. Clique na metade esquerda da célula para tirar um ponto e na direita "
+    "para somar.",
+    "pontos_motivo": "O motivo que você escreveu na auditoria ao ajustar/confirmar a "
+    "pontuação desta foto.",
+    "remetente": "Quem mandou a foto (um número vira nome em ⚙ Ajustes → Remetentes).",
+    "telefone_remetente": "O telefone do remetente, quando o rótulo da conversa é um número.",
+    "data": "Data da mensagem no export (AAAA-MM-DD).",
+    "hora": "Hora da mensagem no export.",
+    "contexto": "Trecho do texto da própria mensagem, para dar contexto ao casamento.",
+    "legenda": "O texto que veio junto da foto (a mensagem sem a marca da mídia).",
+    "contexto_provavel": "A próxima mensagem da mesma pessoa — a pista do que a foto é, "
+    "usada também para sugerir a pontuação.",
+    "foto_arquivo": "Nome do arquivo da foto dentro do export (o WhatsApp renomeia para "
+    "IMG-AAAAMMDD-WA####).",
+    "foto_existe": "“sim” quando o arquivo da foto está de fato dentro do export (.zip).",
+    "midia_pendente": "“sim” quando o arquivo NÃO veio no export: sobra a legenda e a "
+    "marca da mídia, sem imagem nem metadados.",
+}
 
 #: A smaller set for when scrolling speed matters more than seeing everything.
 _FAST_COLUMNS = ("incluido", "remetente", "data", "legenda", "foto_arquivo")
 
 _ALL_COLUMN_KEYS = tuple(key for key, _, _, _ in _DISPLAY_COLUMNS)
+
+#: Heading of each column (kept to redraw the sort arrow).
+_COLUMN_LABELS = {key: title for key, title, _, _ in _DISPLAY_COLUMNS}
 
 
 class StatusSink(Protocol):
@@ -85,10 +122,21 @@ class StatusSink(Protocol):
 def _cell(row: Mapping[str, Any], column: str) -> str:
     if column == "incluido":
         return "☑" if row.get("incluir") else "☐"
+    if column == "pontos":
+        return f"− {points_of(row)} +"
     text = str(row.get(column, "") or "")
     if not text:
         return "—"
     return text if len(text) <= _CELL_TEXT else text[:_CELL_TEXT] + "…"
+
+
+def _sort_value(row: Mapping[str, Any], column: str) -> Sortable:
+    """What a column is sorted by: a number where that makes sense, text otherwise."""
+    if column == "incluido":
+        return int(bool(row.get("incluir")))
+    if column == "pontos":
+        return points_of(row)
+    return str(row.get(column, "") or "").casefold()
 
 
 class ResultsView(ttk.Frame):
@@ -127,6 +175,8 @@ class ResultsView(ttk.Frame):
         self._preview_job: str | None = None
         self._preview_cache: dict[int, Any] = {}
         self._avatar_cache: dict[str, Any] = {}
+        self._sort_column: str | None = None
+        self._sort_descending = False
         self._build()
 
     # -- construction -----------------------------------------------------
@@ -163,47 +213,114 @@ class ResultsView(ttk.Frame):
 
         toolbar = ttk.Frame(self)
         toolbar.pack(fill="x")
-        ttk.Button(toolbar, text="Incluir/Excluir da análise (Espaço)", command=self._toggle).pack(
-            side="left"
+        toggle_button = ttk.Button(
+            toolbar, text="Incluir/Excluir da análise (Espaço)", command=self._toggle
         )
-        ttk.Button(toolbar, text="Excluir (lixeira)", command=self._delete).pack(
-            side="left", padx=4
+        toggle_button.pack(side="left")
+        delete_button = ttk.Button(toolbar, text="Excluir (lixeira)", command=self._delete)
+        delete_button.pack(side="left", padx=4)
+        save_button = ttk.Button(toolbar, text="Salvar CSV…", command=self._on_save)
+        save_button.pack(side="left", padx=4)
+        columns_button = ttk.Button(toolbar, text="Colunas…", command=self._choose_columns)
+        columns_button.pack(side="left", padx=4)
+        self.points_button = ttk.Menubutton(toolbar, text="Pontos ▾")
+        points_menu = tk.Menu(self.points_button, tearoff=False)
+        points_menu.add_command(label="+1 ponto", command=partial(self._adjust_selected, 1))
+        points_menu.add_command(label="−1 ponto", command=partial(self._adjust_selected, -1))
+        points_menu.add_separator()
+        points_menu.add_command(
+            label="Reavaliar pelas legendas", command=self._rescore_from_captions
         )
-        ttk.Button(toolbar, text="Salvar CSV…", command=self._on_save).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Colunas…", command=self._choose_columns).pack(side="left", padx=4)
+        self.points_button.configure(menu=points_menu)
+        self.points_button.pack(side="left", padx=4)
         self.count_label = ttk.Label(toolbar, text="sem dados")
         self.count_label.pack(side="left", padx=10)
+        add_hints(
+            {
+                toggle_button: "Tira ou põe as linhas selecionadas na análise (as Análises "
+                "só contam as marcadas com ☑).",
+                delete_button: "Manda as linhas selecionadas para a lixeira (dá para "
+                "restaurar em ⚙ Ajustes → Lixeira).",
+                save_button: "Salva o que está na tela num CSV, incluindo os pontos e o "
+                "motivo do ajuste.",
+                columns_button: "Escolhe quais colunas a tabela mostra (tem um preset "
+                "“Enxuto”, mais leve para rolar).",
+                self.points_button: "Ajusta a pontuação das linhas selecionadas e reavalia "
+                "as legendas de tudo que você ainda não decidiu.",
+                self.count_label: "Quantas linhas estão na tela, do total, e a soma dos "
+                "pontos mostrados.",
+            }
+        )
 
         filters = ttk.Frame(self)
         filters.pack(fill="x", pady=(4, 0))
-        ttk.Label(filters, text="Buscar:").pack(side="left")
+        search_label = ttk.Label(filters, text="Buscar:")
+        search_label.pack(side="left")
         self.query_var = tk.StringVar()
         query_entry = ttk.Entry(filters, textvariable=self.query_var, width=18)
         query_entry.pack(side="left", padx=(2, 4))
         query_entry.bind("<Return>", lambda _event: self._apply_filters())
         self.regex_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        regex_box = ttk.Checkbutton(
             filters, text="regex", variable=self.regex_var, command=self._apply_filters
-        ).pack(side="left", padx=(0, 8))
+        )
+        regex_box.pack(side="left", padx=(0, 8))
         self.query_var.trace_add("write", lambda *_args: self._schedule_filter())
-        ttk.Label(filters, text="Remetente:").pack(side="left")
+        sender_label = ttk.Label(filters, text="Remetente:")
+        sender_label.pack(side="left")
         self.sender_var = tk.StringVar(value=_ALL_SENDERS)
         self.sender_box = ttk.Combobox(
             filters, textvariable=self.sender_var, width=18, state="readonly"
         )
         self.sender_box.pack(side="left", padx=(2, 8))
         self.sender_box.bind("<<ComboboxSelected>>", lambda _event: self._apply_filters())
-        ttk.Label(filters, text="De:").pack(side="left")
+        start_label = ttk.Label(filters, text="De:")
+        start_label.pack(side="left")
         self.start_var = tk.StringVar()
-        ttk.Entry(filters, textvariable=self.start_var, width=11).pack(side="left")
-        ttk.Label(filters, text="até:").pack(side="left", padx=(4, 2))
+        start_entry = ttk.Entry(filters, textvariable=self.start_var, width=11)
+        start_entry.pack(side="left")
+        end_label = ttk.Label(filters, text="até:")
+        end_label.pack(side="left", padx=(4, 2))
         self.end_var = tk.StringVar()
-        ttk.Entry(filters, textvariable=self.end_var, width=11).pack(side="left")
+        end_entry = ttk.Entry(filters, textvariable=self.end_var, width=11)
+        end_entry.pack(side="left")
         self.pending_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            filters, text="só pendentes", variable=self.pending_var, command=self._apply_filters
-        ).pack(side="left", padx=8)
-        ttk.Button(filters, text="Filtrar", command=self._apply_filters).pack(side="left")
+        pending_box = ttk.Checkbutton(
+            filters, text="só sem arquivo", variable=self.pending_var, command=self._apply_filters
+        )
+        pending_box.pack(side="left", padx=8)
+        self.auto_var = tk.BooleanVar(value=False)
+        auto_box = ttk.Checkbutton(
+            filters,
+            text="só sugestões automáticas",
+            variable=self.auto_var,
+            command=self._apply_filters,
+        )
+        auto_box.pack(side="left", padx=8)
+        filter_button = ttk.Button(filters, text="Filtrar", command=self._apply_filters)
+        filter_button.pack(side="left")
+        add_hints(
+            {
+                search_label: "Filtra a lista por texto. Marque “regex” para usar uma "
+                "expressão regular (ex.: \\bpix\\b).",
+                query_entry: "Filtra a lista por texto. Marque “regex” para usar uma "
+                "expressão regular (ex.: \\bpix\\b).",
+                regex_box: "Trata o que você digitou como expressão regular, não como "
+                "texto literal.",
+                sender_label: "Mostra só o que um remetente postou.",
+                self.sender_box: "Mostra só o que um remetente postou.",
+                start_label: "Recorte por data da mensagem (AAAA-MM-DD).",
+                start_entry: "Recorte por data da mensagem (AAAA-MM-DD).",
+                end_label: "Recorte por data da mensagem (AAAA-MM-DD).",
+                end_entry: "Recorte por data da mensagem (AAAA-MM-DD).",
+                pending_box: "Mostra só as fotos cujo arquivo não veio no export (sobra a "
+                "legenda, sem imagem).",
+                auto_box: "Mostra só as pontuações sugeridas pela legenda que você ainda "
+                "não revisou na auditoria.",
+                filter_button: "Aplica os filtros agora (eles também aplicam sozinhos ao "
+                "mudar um campo).",
+            }
+        )
 
         panes = ttk.Panedwindow(self, orient="horizontal")
         panes.pack(fill="both", expand=True, pady=(8, 0))
@@ -216,8 +333,10 @@ class ResultsView(ttk.Frame):
             columns=list(_ALL_COLUMN_KEYS), displaycolumns=list(self._visible_columns)
         )
         for column, title, width, anchor in _DISPLAY_COLUMNS:
-            self.tree.heading(column, text=title)
+            self.tree.heading(column, text=title, command=partial(self._sort_by, column))
             self.tree.column(column, width=width, anchor=anchor, stretch=False)
+        self.tree.tag_configure("pontuada", foreground=_POINTED_COLOUR)
+        add_tree_hints(self.tree, _COLUMN_HINTS)
         yscroll.pack(side="right", fill="y")
         xscroll.pack(side="bottom", fill="x")
         self.tree.pack(side="left", fill="both", expand=True)
@@ -225,6 +344,8 @@ class ResultsView(ttk.Frame):
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.bind("<Button-1>", self._on_click, add="+")
         self.tree.bind("<space>", self._on_space)
+        self.tree.bind("+", partial(self._on_points_key, 1))
+        self.tree.bind("-", partial(self._on_points_key, -1))
         panes.add(table, weight=3)
         panes.add(self._build_side(panes), weight=1)
 
@@ -333,6 +454,7 @@ class ResultsView(ttk.Frame):
             start=self.start_var.get().strip() or None,
             end=self.end_var.get().strip() or None,
             only_pending=bool(self.pending_var.get()),
+            only_auto=bool(self.auto_var.get()),
         )
         term = self.query_var.get().strip()
         if not term:
@@ -380,7 +502,7 @@ class ResultsView(ttk.Frame):
         self.import_button.configure(state="disabled" if busy else "normal")
 
     def _apply_filters(self) -> None:
-        visible = self._visible_rows()
+        visible = self._sorted_rows(self._visible_rows())
         self.tree.delete(*self.tree.get_children())
         self._by_iid = {}
         for index, row in enumerate(visible):
@@ -393,9 +515,50 @@ class ResultsView(ttk.Frame):
                 self._by_iid[str(index)] = dict(row)
             iid = str(row["id"]) if self._db_backed else str(index)
             self.tree.insert(
-                "", "end", iid=iid, values=[_cell(row, key) for key in _ALL_COLUMN_KEYS]
+                "",
+                "end",
+                iid=iid,
+                values=[_cell(row, key) for key in _ALL_COLUMN_KEYS],
+                tags=self._tags(row),
             )
-        self.count_label.configure(text=f"{len(visible)} de {len(self._rows)} linha(s)")
+        points = sum(points_of(row) for row in visible)
+        self.count_label.configure(
+            text=f"{len(visible)} de {len(self._rows)} linha(s) · {points} ponto(s)"
+        )
+
+    # -- sorting ----------------------------------------------------------
+    def _sorted_rows(self, rows: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+        """Apply the current column order (the store's own order by default)."""
+        column = self._sort_column
+        if column is None:
+            return rows
+        return sort_items(
+            rows, lambda row: _sort_value(row, column), descending=self._sort_descending
+        )
+
+    def _sort_by(self, column: str) -> None:
+        """Sort by ``column``; clicking the same heading again flips the order."""
+        if self._sort_column == column:
+            self._sort_descending = not self._sort_descending
+        else:
+            self._sort_column = column
+            self._sort_descending = False
+        self._apply_headings()
+        self._apply_filters()
+        direction = "decrescente" if self._sort_descending else "crescente"
+        self._on_status(f"Ordenado por {_COLUMN_LABELS[column]} ({direction}).")
+
+    def _apply_headings(self) -> None:
+        """Redraw every heading, marking the sorted column with an arrow."""
+        for column, title in _COLUMN_LABELS.items():
+            self.tree.heading(
+                column,
+                text=heading_label(
+                    title,
+                    active=column == self._sort_column,
+                    descending=self._sort_descending,
+                ),
+            )
 
     # -- selection helpers ------------------------------------------------
     def _selected_ids(self) -> list[int]:
@@ -411,40 +574,64 @@ class ResultsView(ttk.Frame):
         return str(row.get("remetente", "") or "")
 
     # -- actions ----------------------------------------------------------
+    def _tags(self, row: Mapping[str, Any]) -> tuple[str, ...]:
+        """Row tags: a coloured line for the photos worth two points or more."""
+        return ("pontuada",) if points_of(row) >= score.PONTOS_EXERCICIO else ()
+
     def _on_space(self, _event: tk.Event) -> str:
         self._toggle()
         return "break"
 
-    def _on_checkbox_cell(self, event: tk.Event) -> str | None:
-        """The row whose ☑/☐ cell is under the pointer (``None`` when it is not)."""
+    def _on_points_key(self, delta: int, _event: tk.Event) -> str:
+        """Sum or take a point from the selected rows (``+`` and ``-``)."""
+        self._adjust_selected(delta)
+        return "break"
+
+    def _column_under(self, event: tk.Event) -> tuple[str | None, str | None]:
+        """The row id and column key under the pointer, when it is over a cell."""
         if not self._db_backed or not self._visible_columns:
-            return None
-        if self._visible_columns[0] != "incluido":
-            return None
+            return None, None
         if self.tree.identify_region(event.x, event.y) != "cell":
-            return None
-        if self.tree.identify_column(event.x) != "#1":
-            return None
-        return self.tree.identify_row(event.y) or None
+            return None, None
+        column_id = self.tree.identify_column(event.x)
+        if not column_id.startswith("#") or not column_id[1:].isdigit():
+            return None, None
+        index = int(column_id[1:]) - 1
+        if not 0 <= index < len(self._visible_columns):
+            return None, None
+        return self.tree.identify_row(event.y) or None, self._visible_columns[index]
 
     def _on_click(self, event: tk.Event) -> str | None:
-        """Toggle the ☑/☐ when the first column is clicked."""
-        iid = self._on_checkbox_cell(event)
-        if iid is None:
+        """Toggle the ☑/☐ or score the photo, depending on the clicked cell."""
+        iid, column = self._column_under(event)
+        if iid is None or column not in {"incluido", "pontos"}:
             return None
         row = self._by_iid.get(iid)
         if row is None or row.get("id") is None:
             return None
-        included = not bool(row.get("incluir"))
-        self._set_included([int(row["id"])], included)
-        self.tree.set(iid, "incluido", "☑" if included else "☐")
-        state = "dentro" if included else "fora"
-        self._on_status(f"{row.get('remetente', '')} agora está {state} da análise.")
+        if column == "incluido":
+            included = not bool(row.get("incluir"))
+            self._set_included([int(row["id"])], included)
+            self.tree.set(iid, "incluido", "☑" if included else "☐")
+            state = "dentro" if included else "fora"
+            self._on_status(f"{row.get('remetente', '')} agora está {state} da análise.")
+            return "break"
+        delta = 1 if self._is_plus_half(event, iid, column) else -1
+        self._adjust_points([int(row["id"])], delta)
         return "break"
 
+    def _is_plus_half(self, event: tk.Event, iid: str, column: str) -> bool:
+        """Whether the pointer is on the right (``+``) half of the score cell."""
+        box = self.tree.bbox(iid, column)
+        if not box:
+            return True
+        left, _top, width, _height = box
+        return event.x >= left + width / 2
+
     def _on_double_click(self, event: tk.Event) -> str | None:
-        """Open the viewer — except on the ☑/☐ column, which already toggled."""
-        if self._on_checkbox_cell(event) is not None:
+        """Open the viewer — except on the ☑/☐ and Pontos cells, already handled."""
+        _iid, column = self._column_under(event)
+        if column in {"incluido", "pontos"}:
             return "break"
         self._open_viewer()
         return None
@@ -462,6 +649,51 @@ class ResultsView(ttk.Frame):
         for iid, row in self._by_iid.items():
             if row.get("id") in ids:
                 self.tree.set(iid, "incluido", "☑" if row.get("incluir") else "☐")
+
+    def _adjust_points(self, ids: list[int], delta: int) -> None:
+        """Persist the new score, update the cached rows and redraw the cell."""
+        self._store.adjust_points(ids, delta)
+        adjusted = [row for row in self._rows if row.get("id") in ids]
+        for row in adjusted:
+            row["pontos"] = max(points_of(row) + delta, score.PONTOS_MIN)
+            row["pontos_origem"] = score.ORIGEM_MANUAL
+        self._refresh_points(ids)
+        if self._on_analytics is not None:
+            self._on_analytics()
+        if len(adjusted) == 1:
+            row = adjusted[0]
+            self._on_status(
+                f"{row.get('remetente', '')}: {points_of(row)} ponto(s) — ajustado por você."
+            )
+        else:
+            self._on_status(f"{len(adjusted)} linha(s) ajustada(s) em {delta:+d} ponto(s).")
+
+    def _refresh_points(self, ids: list[int]) -> None:
+        """Redraw the score cell (and its colour) of the rows already on screen."""
+        for iid, row in self._by_iid.items():
+            if row.get("id") not in ids:
+                continue
+            self.tree.set(iid, "pontos", _cell(row, "pontos"))
+            self.tree.item(iid, tags=self._tags(row))
+
+    def _adjust_selected(self, delta: int) -> None:
+        """Score every selected row by ``delta`` points."""
+        ids = self._selected_ids()
+        if not ids:
+            self._on_status("Selecione uma linha (ou clique no −/+ da coluna Pontos).", ok=False)
+            return
+        self._adjust_points(ids, delta)
+
+    def _rescore_from_captions(self) -> None:
+        """Re-apply the caption heuristic everywhere, manual scores untouched."""
+        rows = self._store.rows(include_deleted=True)
+        changed = self._store.rescore_auto(score.suggestions(rows))
+        self._on_changed()
+        self._on_status(
+            f"{changed} pontuação(ões) atualizada(s) pelas legendas."
+            if changed
+            else "Nenhuma sugestão nova nas legendas."
+        )
 
     def _toggle(self) -> None:
         if not self._db_backed:

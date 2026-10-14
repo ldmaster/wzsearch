@@ -23,6 +23,7 @@ from . import __version__, backup, senders
 from .avatars import config_dir
 from .dnd import TkinterDnD, dnd_available
 from .gui_analytics import AnalyticsView
+from .gui_audit import ScoreAuditWindow
 from .gui_data import DataView
 from .gui_help import HelpWindow
 from .gui_results import ResultsView, TrashView
@@ -34,7 +35,7 @@ from .pipeline import (
     WzsearchError,
     import_photos,
 )
-from .scroll import bind_wheel
+from .scroll import bind_wheel, rows_for_delta, touchpad_rows
 from .store import Store
 from .writer import DB_COLUMNS, write_rows
 
@@ -48,6 +49,9 @@ _MIN_HEIGHT = 540
 
 _REPO_URL = "https://github.com/ldmaster/wzsearch"
 _AUTHOR = "ldmaster"
+
+#: How many wheel events are written to the log in one session (diagnosis).
+_WHEEL_LOG_LIMIT = 15
 
 
 def _wheel_scroll(tree: ttk.Treeview, rows: int) -> None:
@@ -94,10 +98,16 @@ class WzsearchApp:
         self._queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._window_refreshers: list[Callable[[], None]] = []
         self._tabs: dict[str, tk.Widget] = {}
+        self._wheel_logged = 0
         self.store, self._store_warning = _open_store()
         self._build_menu()
         self._build()
+        # A base imported before the score existed gets its exercise photos
+        # marked here, without anyone clicking anything.
+        scored = self.store.rescore_unevaluated()
         self._refresh()
+        if scored:
+            self._set_status(f"{scored} foto(s) marcadas como exercício pelas legendas (2 pontos).")
 
     # -- menus ------------------------------------------------------------
     def _build_menu(self) -> None:
@@ -135,6 +145,7 @@ class WzsearchApp:
         ajustes_menu = tk.Menu(self.ajustes, tearoff=False)
         ajustes_menu.add_command(label="Remetentes…", command=self._open_senders)
         ajustes_menu.add_command(label="Lixeira…", command=self._open_trash)
+        ajustes_menu.add_command(label="Auditoria de pontuação…", command=self._open_audit)
         ajustes_menu.add_separator()
         ajustes_menu.add_command(label="Dados e backup…", command=self._open_data)
         self.ajustes.configure(menu=ajustes_menu)
@@ -156,11 +167,17 @@ class WzsearchApp:
         self.notebook.add(self.analytics, text="Análises")
         self._tabs = {"Explorar": self.results, "Análises": self.analytics}
         bind_wheel(self.results.tree, partial(_wheel_scroll, self.results.tree))
-        # Safety net: anything over the analytics page that no widget claimed
-        # (new widgets, empty areas) still scrolls it.
-        self.root.bind("<MouseWheel>", self._catch_all_wheel, add="+")
-        self.root.bind("<Button-4>", lambda _event: self._scroll_analytics(-1), add="+")
-        self.root.bind("<Button-5>", lambda _event: self._scroll_analytics(1), add="+")
+        # The wheel has to work with the pointer anywhere over the analytics page —
+        # over its labels, charts and tables. Binding it to "all" reaches every
+        # widget (including the ones created later); a widget that scrolls itself
+        # (the list, the audit tables) returns "break" and keeps the event.
+        self.root.bind_all("<MouseWheel>", self._on_wheel, add="+")
+        # Tk 9 on macOS reports trackpads and "smooth" mice as TouchpadScroll
+        # (pixels), an event the canvas has no binding for — without this the
+        # Análises page only scrolled over the scrollbar.
+        self.root.bind_all("<TouchpadScroll>", self._on_touchpad, add="+")
+        self.root.bind_all("<Button-4>", lambda event: self._on_wheel_button(event, -1), add="+")
+        self.root.bind_all("<Button-5>", lambda event: self._on_wheel_button(event, 1), add="+")
 
         bottom = ttk.Frame(self.root, padding=(10, 6, 10, 10))
         bottom.pack(fill="x")
@@ -180,14 +197,62 @@ class WzsearchApp:
         if widget is not None:
             self.notebook.select(widget)  # type: ignore[no-untyped-call]
 
-    def _catch_all_wheel(self, event: tk.Event) -> None:
-        """Scroll the analytics page when nothing else handled the wheel."""
-        self._scroll_analytics(1 if int(getattr(event, "delta", 0) or 0) < 0 else -1)
+    def _on_wheel(self, event: tk.Event) -> None:
+        """Scroll the analytics page when the wheel is over it.
 
-    def _scroll_analytics(self, rows: int) -> None:
-        widget = self.root.winfo_containing(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        The widget comes from the event itself (``event.widget`` is the widget
+        under the pointer); ``winfo_containing`` is only a fallback, since it can
+        answer ``None`` on macOS.
+        """
+        self._scroll_page(event, rows_for_delta(getattr(event, "delta", None)), "wheel")
+
+    def _on_touchpad(self, event: tk.Event) -> None:
+        """Scroll the analytics page for a Tk 9 ``<TouchpadScroll>`` (pixels)."""
+        self._scroll_page(event, touchpad_rows(getattr(event, "delta", None)), "touchpad")
+
+    def _scroll_page(self, event: tk.Event, rows: int, origem: str) -> None:
+        """Scroll the analytics page by ``rows`` when the event is over it."""
+        delta = getattr(event, "delta", None)
+        widget = self._widget_of_event(event)
+        if rows and widget is not None and _is_inside(widget, self.analytics):
+            self.analytics.scroll(rows)
+            self._log_wheel(origem, delta, rows, widget, ok=True)
+            return
+        self._log_wheel(origem, delta, rows, widget, ok=False)
+
+    def _widget_of_event(self, event: tk.Event) -> tk.Misc | None:
+        """The widget the event was delivered to, or the one under the pointer."""
+        widget = getattr(event, "widget", None)
+        return widget if widget is not None else self._widget_under_pointer()
+
+    def _widget_under_pointer(self) -> tk.Misc | None:
+        return self.root.winfo_containing(self.root.winfo_pointerx(), self.root.winfo_pointery())
+
+    def _on_wheel_button(self, event: tk.Event, rows: int) -> None:
+        """X11 sends ``Button-4``/``Button-5`` instead of a wheel delta."""
+        widget = self._widget_of_event(event)
         if widget is not None and _is_inside(widget, self.analytics):
             self.analytics.scroll(rows)
+            self._log_wheel("button", rows, rows, widget, ok=True)
+            return
+        self._log_wheel("button", rows, rows, widget, ok=False)
+
+    def _log_wheel(
+        self, origem: str, delta: object, rows: int, widget: tk.Misc | None, *, ok: bool
+    ) -> None:
+        """Log the first wheel events of the session (diagnosis of stuck scroll)."""
+        if self._wheel_logged >= _WHEEL_LOG_LIMIT:
+            return
+        self._wheel_logged += 1
+        _LOG.info(
+            "roda: evento=%s delta=%r rows=%s widget=%s dentro=%s resultado=%s",
+            origem,
+            delta,
+            rows,
+            type(widget).__name__ if widget is not None else None,
+            _is_inside(widget, self.analytics) if widget is not None else None,
+            "rolou" if ok else "sem efeito",
+        )
 
     def _new_window(self, title: str, size: str = "920x560") -> tk.Toplevel:
         window = tk.Toplevel(self.root)
@@ -225,6 +290,15 @@ class WzsearchApp:
         view.pack(fill="both", expand=True)
         view.show(self._deleted_rows())
         self._track(window, lambda: view.show(self._deleted_rows()))
+
+    def _open_audit(self) -> None:
+        """Open the score audit: what each photo scores, and why."""
+        window = self._new_window("Auditoria de pontuação", "1120x680")
+        view = ScoreAuditWindow(
+            window, store=self.store, on_status=self._set_status, on_changed=self._refresh
+        )
+        view.pack(fill="both", expand=True)
+        self._track(window, view.reload)
 
     def _open_data(self) -> None:
         window = self._new_window("Dados e backup", "780x520")
@@ -298,7 +372,10 @@ class WzsearchApp:
         self._set_busy(False)
         if kind == "imported" and isinstance(payload, ImportResult):
             self._refresh()
-            self._set_status(f"{payload.added} nova(s) no banco · {payload.skipped} já estavam lá.")
+            resumo = f"{payload.added} nova(s) no banco · {payload.skipped} já estavam lá"
+            if payload.enriched:
+                resumo += f" · {payload.enriched} completada(s) com o arquivo"
+            self._set_status(f"{resumo}.")
         else:
             self._fail(str(payload))
 

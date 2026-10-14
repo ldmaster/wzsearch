@@ -7,6 +7,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TextIO
 
+from . import identity
+
 #: Column order of the occurrences CSV (search mode).
 COLUMNS = (
     "occurrence_id",
@@ -71,12 +73,35 @@ DB_COLUMNS = (
     "midia_pendente",
     "status",
     "incluir",
+    "pontos",
+    "pontos_origem",
+    "pontos_motivo",
 )
+
+
+def _identity_value(column: str, value: str) -> str:
+    """The value a *line already written* is recognised by.
+
+    ``foto_evidencia`` carries the name of the export file, and WhatsApp renames
+    every new export (``… (1).zip``) — comparing it as it is would make an
+    already recorded line look new. The suffix is dropped here so a re-export
+    matches what is already in the file.
+    """
+    if column != "foto_evidencia":
+        return value
+    source, separator, arquivo = value.partition("::")
+    if not separator:
+        return value
+    return f"{identity.strip_copy_suffix(source)}::{arquivo}"
 
 
 def row_key(row: Mapping[str, object], columns: Sequence[str], id_column: str) -> tuple[str, ...]:
     """Return the stable identity of a row: every column except the sequential id."""
-    return tuple(str(row.get(column, "")) for column in columns if column != id_column)
+    return tuple(
+        _identity_value(column, str(row.get(column, "")))
+        for column in columns
+        if column != id_column
+    )
 
 
 def read_existing_keys(
@@ -112,8 +137,12 @@ def write_rows(
     *,
     write_header: bool = True,
 ) -> int:
-    """Write ``rows`` as CSV to ``handle`` and return the number written."""
-    writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n")
+    """Write ``rows`` as CSV to ``handle`` and return the number written.
+
+    Keys the rows carry beyond ``columns`` (the identity of a record, for one)
+    are ignored: the file format stays exactly what it always was.
+    """
+    writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n", extrasaction="ignore")
     if write_header:
         writer.writeheader()
     count = 0

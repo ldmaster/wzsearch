@@ -22,12 +22,24 @@ jobs:
       - run: mypy
       - run: pytest
 
-  # The shipped artifact is the Windows executable. The macOS app is built
-  # locally (scripts/build_macos.sh) and is not part of the release.
-  build-windows:
+  # One runner per system: PyInstaller builds for the machine it runs on, so
+  # the app is compiled natively on Windows, macOS and Linux. Each job ships
+  # the GUI only (the CLI stays with the pip/uv install) and uploads its zip,
+  # which the release job attaches to the release.
+  build:
     needs: test
     if: github.event_name != 'pull_request'
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: wzsearch-windows.zip
+          - os: macos-latest
+            asset: wzsearch-macos.zip
+          - os: ubuntu-latest
+            asset: wzsearch-linux.zip
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
       actions: read
@@ -37,28 +49,103 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[gui]" "pyinstaller>=6.6,<7"
+
+      # Tkinter is what the GUI draws with. On Linux it comes from the system;
+      # should the setup-python build ever lose sight of it, the system Python
+      # (also 3.12) takes over.
+      - name: Tkinter (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-venv
+          build_python=python
+          if ! python -c "import tkinter" 2>/dev/null; then
+            build_python=.venv-tk/bin/python
+            python3 -m venv .venv-tk
+          fi
+          "$build_python" -c "import tkinter"
+          echo "BUILD_PYTHON=$build_python" >> "$GITHUB_ENV"
+
+      - name: Install the build dependencies
+        if: runner.os != 'Linux'
+        run: python -m pip install -e ".[gui]" "pyinstaller>=6.6,<7"
+
+      - name: Install the build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: $BUILD_PYTHON -m pip install -e ".[gui]" "pyinstaller>=6.6,<7"
+
       # The version lives in one place (src/wzsearch/__init__.py); this writes
       # the PE resource so the executable carries its own version.
-      - name: Version resource
+      - name: Version resource (Windows)
+        if: runner.os == 'Windows'
         run: python scripts/make_version_info.py
-      - name: Build the app
+
+      - name: Build the app (Windows)
+        if: runner.os == 'Windows'
         run: >
-          pyinstaller --onefile --windowed --name wzsearch --paths src
+          python -m PyInstaller --onefile --windowed --name wzsearch --paths src
           --version-file packaging/version_info.txt
           --icon packaging\icon.ico
           --collect-all tkinterdnd2 --collect-all pillow_heif
           packaging/wzsearch_gui_entry.py
-      - name: Package the release zip
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "dist/wzsearch.exe" -DestinationPath "wzsearch-windows.zip" -Force
+        run: >
+          Compress-Archive -Path "dist/wzsearch.exe"
+          -DestinationPath "wzsearch-windows.zip" -Force
+
+      # universal2 so the same .app runs on Apple Silicon and Intel.
+      - name: Build the app (macOS)
+        if: runner.os == 'macOS'
+        run: >
+          python -m PyInstaller --windowed --name wzsearch --paths src
+          --target-arch universal2
+          --icon packaging/icon.icns
+          --collect-all tkinterdnd2 --collect-all pillow_heif
+          packaging/wzsearch_gui_entry.py
+
+      # ditto keeps the .app bundle structure and permissions intact.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/wzsearch.app wzsearch-macos.zip
+
+      - name: Build the app (Linux)
+        if: runner.os == 'Linux'
+        run: >
+          $BUILD_PYTHON -m PyInstaller --onefile --name wzsearch --paths src
+          --collect-all tkinterdnd2 --collect-all pillow_heif
+          packaging/wzsearch_gui_entry.py
+
+      # No display on the runners: xvfb proves the binary really opens.
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y xvfb
+          set +e
+          timeout 20 xvfb-run -a ./dist/wzsearch
+          status=$?
+          set -e
+          if [ "$status" -ne 124 ]; then
+            echo "o app não ficou de pé ao abrir (status $status)"
+            exit 1
+          fi
+          echo "o app abriu e rodou até o timeout"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x dist/wzsearch
+          zip -j wzsearch-linux.zip dist/wzsearch
+
       - uses: actions/upload-artifact@v4
         with:
-          name: wzsearch-windows
-          path: wzsearch-windows.zip
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
 
   release:
-    needs: build-windows
+    needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

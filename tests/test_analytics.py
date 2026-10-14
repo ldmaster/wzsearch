@@ -1,6 +1,17 @@
 from typing import Any
 
-from wzsearch.analytics import caption_words, filter_rows, photo_stats, sender_details
+from wzsearch.analytics import (
+    audit_rows,
+    caption_words,
+    filter_rows,
+    photo_stats,
+    points_of,
+    score_audit,
+    score_reason,
+    score_situation,
+    sender_details,
+    situation_label,
+)
 
 ROWS: list[dict[str, Any]] = [
     {
@@ -129,3 +140,99 @@ def test_caption_words() -> None:
     assert words["chocolate"] == 2
     assert "o" not in words
     assert "kkk" not in words
+
+
+def test_rows_without_a_score_count_as_one_point() -> None:
+    stats = photo_stats(ROWS)
+    assert stats.total_points == 4
+    assert stats.avg_points == 1.0
+    assert stats.exercise == 0
+    assert stats.auto_points == 0
+
+
+def test_points_metrics_and_per_sender() -> None:
+    rows: list[dict[str, Any]] = [
+        {"remetente": "Ana", "data": "2024-03-01", "pontos": 2, "pontos_origem": "auto"},
+        {"remetente": "Ana", "data": "2024-03-02", "pontos": 3, "pontos_origem": "manual"},
+        {"remetente": "Bruno", "data": "2024-03-03", "pontos": "1", "pontos_origem": ""},
+    ]
+    stats = photo_stats(rows)
+    assert stats.total_points == 6
+    assert stats.avg_points == 2.0
+    assert stats.exercise == 2
+    assert stats.auto_points == 1
+
+    details = {detail.sender: detail for detail in stats.senders}
+    assert details["Ana"].points == 5
+    assert details["Ana"].exercise == 2
+    assert details["Bruno"].points == 1
+    assert details["Bruno"].exercise == 0
+
+
+def test_points_of_tolerates_missing_values() -> None:
+    assert points_of({}) == 1
+    assert points_of({"pontos": None}) == 1
+    assert points_of({"pontos": ""}) == 1
+    assert points_of({"pontos": "0"}) == 1
+    assert points_of({"pontos": 4}) == 4
+
+
+def test_filter_rows_only_auto() -> None:
+    rows: list[dict[str, Any]] = [
+        {"pontos_origem": "auto"},
+        {"pontos_origem": "manual"},
+        {},
+    ]
+    assert len(filter_rows(rows, only_auto=True)) == 1
+    assert len(filter_rows(rows)) == 3
+
+
+SITUACOES: list[dict[str, Any]] = [
+    {"id": 1, "remetente": "Ana", "pontos": 2, "pontos_origem": "auto", "legenda": "treino"},
+    {"id": 2, "remetente": "Ana", "pontos": 2, "pontos_origem": "confirmado", "legenda": "treino"},
+    {"id": 3, "remetente": "Bruno", "pontos": 1, "pontos_origem": "manual", "legenda": "bolo"},
+    {"id": 4, "remetente": "Bruno", "pontos": 4, "pontos_origem": "manual", "legenda": "corrida"},
+    {"id": 5, "remetente": "Bruno", "pontos": 1, "pontos_origem": "", "legenda": "café"},
+]
+
+
+def test_score_situation_and_labels() -> None:
+    assert [score_situation(row) for row in SITUACOES] == [
+        "auto",
+        "confirmado",
+        "manual",
+        "manual",
+        "sem_sugestao",
+    ]
+    assert situation_label(SITUACOES[0]) == "Sugestão a revisar"
+    assert situation_label(SITUACOES[1]) == "Sugestão confirmada"
+    assert situation_label(SITUACOES[2]) == "Ajustada por você"
+    assert situation_label(SITUACOES[3]) == "4 pontos (fora do padrão)"
+    assert situation_label(SITUACOES[4]) == "1 ponto (sem sugestão)"
+
+
+def test_audit_rows_by_situation_and_sender() -> None:
+    assert [row["id"] for row in audit_rows(SITUACOES, "auto")] == [1]
+    assert [row["id"] for row in audit_rows(SITUACOES, "revisadas")] == [2, 3, 4]
+    assert [row["id"] for row in audit_rows(SITUACOES, "alto")] == [4]
+    assert [row["id"] for row in audit_rows(SITUACOES, "todas")] == [1, 2, 3, 4, 5]
+    assert [row["id"] for row in audit_rows(SITUACOES, "todas", "Bruno")] == [3, 4, 5]
+    assert audit_rows(SITUACOES, "auto", "Bruno") == []
+
+
+def test_score_audit_totals() -> None:
+    totals = score_audit(SITUACOES)
+    assert totals.photos == 5
+    assert totals.points == 10
+    assert totals.suggestions == 1
+    assert totals.confirmed == 1
+    assert totals.manual == 2
+    assert totals.over == 1
+    assert score_audit([]).photos == 0
+
+
+def test_score_reason_explains_each_situation() -> None:
+    assert "treino" in score_reason(SITUACOES[0])
+    assert "treino" in score_reason(SITUACOES[1])
+    assert score_reason(SITUACOES[2]) == "ajustada por você"
+    assert score_reason(SITUACOES[4]) == ""
