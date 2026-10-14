@@ -65,13 +65,18 @@ def _wheel_scroll(tree: ttk.Treeview, rows: int) -> None:
     tree.yview_scroll(rows, "units")
 
 
-def _is_inside(widget: tk.Misc, ancestor: tk.Misc) -> bool:
-    """Whether ``widget`` is ``ancestor`` or one of its descendants."""
-    node: tk.Misc | None = widget
+def _is_inside(widget: object, ancestor: tk.Misc) -> bool:
+    """Whether ``widget`` is ``ancestor`` or one of its descendants.
+
+    Tk can hand a widget over as its path name (a string) and a chain can end in
+    something that is not a widget at all, so the walk asks for ``master`` and
+    stops when there is none — comparing widgets never fails.
+    """
+    node: object = widget
     while node is not None:
         if node is ancestor:
             return True
-        node = node.master
+        node = getattr(node, "master", None)
     return False
 
 
@@ -210,13 +215,19 @@ class WzsearchApp:
 
         The widget comes from the event itself (``event.widget`` is the widget
         under the pointer); ``winfo_containing`` is only a fallback, since it can
-        answer ``None`` on macOS.
+        answer ``None`` on macOS. Scrolling is never allowed to break the window.
         """
-        self._scroll_page(event, rows_for_delta(getattr(event, "delta", None)), "wheel")
+        try:
+            self._scroll_page(event, rows_for_delta(getattr(event, "delta", None)), "wheel")
+        except Exception as exc:  # noqa: BLE001 - scrolling must never break the window
+            self._wheel_failed(exc)
 
     def _on_touchpad(self, event: tk.Event) -> None:
         """Scroll the analytics page for a Tk 9 ``<TouchpadScroll>`` (pixels)."""
-        self._scroll_page(event, touchpad_rows(getattr(event, "delta", None)), "touchpad")
+        try:
+            self._scroll_page(event, touchpad_rows(getattr(event, "delta", None)), "touchpad")
+        except Exception as exc:  # noqa: BLE001 - scrolling must never break the window
+            self._wheel_failed(exc)
 
     def _scroll_page(self, event: tk.Event, rows: int, origem: str) -> None:
         """Scroll the analytics page by ``rows`` when the event is over it."""
@@ -230,20 +241,44 @@ class WzsearchApp:
 
     def _widget_of_event(self, event: tk.Event) -> tk.Misc | None:
         """The widget the event was delivered to, or the one under the pointer."""
-        widget = getattr(event, "widget", None)
+        widget = self._as_widget(getattr(event, "widget", None))
         return widget if widget is not None else self._widget_under_pointer()
 
     def _widget_under_pointer(self) -> tk.Misc | None:
-        return self.root.winfo_containing(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        return self._as_widget(
+            self.root.winfo_containing(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        )
+
+    def _as_widget(self, value: object) -> tk.Misc | None:
+        """Tk answers with a widget or with its path name: accept both."""
+        if isinstance(value, tk.Misc):
+            return value
+        if isinstance(value, str) and value:
+            try:
+                found: tk.Misc = self.root.nametowidget(value)
+            except tk.TclError:  # pragma: no cover - path of a window already gone
+                return None
+            return found
+        return None
 
     def _on_wheel_button(self, event: tk.Event, rows: int) -> None:
         """X11 sends ``Button-4``/``Button-5`` instead of a wheel delta."""
-        widget = self._widget_of_event(event)
-        if widget is not None and _is_inside(widget, self.analytics):
-            self.analytics.scroll(rows)
-            self._log_wheel("button", rows, rows, widget, ok=True)
+        try:
+            widget = self._widget_of_event(event)
+            if widget is not None and _is_inside(widget, self.analytics):
+                self.analytics.scroll(rows)
+                self._log_wheel("button", rows, rows, widget, ok=True)
+                return
+            self._log_wheel("button", rows, rows, widget, ok=False)
+        except Exception as exc:  # noqa: BLE001 - scrolling must never break the window
+            self._wheel_failed(exc)
+
+    def _wheel_failed(self, exc: BaseException) -> None:
+        """Record the first failures (scrolling carries on being decoration)."""
+        if self._wheel_logged >= _WHEEL_LOG_LIMIT:
             return
-        self._log_wheel("button", rows, rows, widget, ok=False)
+        self._wheel_logged += 1
+        _LOG.info("roda falhou: %s: %s", type(exc).__name__, exc)
 
     def _log_wheel(
         self, origem: str, delta: object, rows: int, widget: tk.Misc | None, *, ok: bool

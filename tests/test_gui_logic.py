@@ -6,10 +6,28 @@ pytest.importorskip("tkinter")
 
 from wzsearch.dnd import dnd_available  # noqa: E402
 from wzsearch.gui import (  # noqa: E402
+    _is_inside,
     default_output_name,
     validate_source,
 )
 from wzsearch.gui_results import _cell, _sort_value  # noqa: E402
+
+
+def test_is_inside_never_blows_up_on_a_non_widget() -> None:
+    """O Tk pode devolver o caminho do widget (string) em vez do widget."""
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.withdraw()
+    painel = tk.Frame(root)
+    filho = tk.Frame(painel)
+    assert _is_inside(filho, painel)
+    assert _is_inside(painel, painel)
+    assert not _is_inside(painel, filho)
+    assert not _is_inside("ana", painel)
+    assert not _is_inside(None, painel)
+    assert not _is_inside(42, painel)
+    root.destroy()
 
 
 def test_score_cell_shows_both_clickable_halves() -> None:

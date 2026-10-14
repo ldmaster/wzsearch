@@ -5,6 +5,6 @@ The supported entry point is :func:`wzsearch.cli.main`.
 
 from __future__ import annotations
 
-__version__ = "0.10.3"
+__version__ = "0.10.4"
 
 __all__ = ["__version__"]
