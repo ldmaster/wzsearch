@@ -309,15 +309,19 @@ class WzsearchApp:
         self._track(window, view.reload)
 
     def _open_data(self) -> None:
-        window = self._new_window("Dados e backup", "780x520")
+        window = self._new_window("Dados e backup", "780x620")
         view = DataView(
             window,
             data_path=self.store.path.parent,
+            store=self.store,
+            on_status=self._set_status,
             on_backup=self._backup,
             on_restore=self._restore,
             on_wipe=self._wipe,
+            on_changed=self._refresh,
         )
         view.pack(fill="both", expand=True)
+        self._track(window, view.reload)
 
     # -- data -------------------------------------------------------------
     def _refresh(self) -> None:

@@ -410,8 +410,135 @@ def test_old_rows_stored_with_a_renamed_chat_are_recognised(tmp_path: Path) -> N
     assert len(reaberta.rows()) == 3
 
 
+def test_a_base_with_the_old_identity_formula_is_rebuilt(tmp_path: Path) -> None:
+    """Quem rodou a 0.10.x tem assinatura feita com o chat: ela é refeita."""
+    store = Store(tmp_path / "wzsearch.db")
+    export = _zip(tmp_path, f"{_CHAT}.zip", com_midia=True)
+    import_photos([export], store)
+    assert len(store.rows()) == 3
+
+    # como ficava na 0.10.x: assinatura de outra fórmula, versão 1
+    store._conn.execute("UPDATE photos SET assinatura = 'antiga-' || id")
+    store._conn.execute("PRAGMA user_version = 1")
+    store._conn.commit()
+    store.close()
+
+    reaberta = Store(tmp_path / "wzsearch.db")
+    assinaturas = {str(row[0]) for row in reaberta._conn.execute("SELECT assinatura FROM photos")}
+    assert not any(assinatura.startswith("antiga-") for assinatura in assinaturas)
+    assert len(assinaturas) == 3
+
+    resultado = import_photos([export], reaberta)
+    assert resultado.added == 0
+    assert len(reaberta.rows()) == 3
+
+
 def test_the_import_records_which_export_brought_each_photo(tmp_path: Path) -> None:
     store = Store(":memory:")
     export = _zip(tmp_path, f"{_CHAT}.zip", com_midia=True)
     import_photos([export], store)
     assert {row["source"] for row in store.rows()} == {export.name}
+
+
+# --- sanitização de duplicatas ------------------------------------------------
+
+
+def _copia(store: Store, row_id: int, created_at: str) -> int:
+    """Duplica uma linha como uma importação antiga deixava (marca temporal própria)."""
+    row = store._conn.execute("SELECT * FROM photos WHERE id = ?", (row_id,)).fetchone()
+    ocorrencia = store._conn.execute(
+        "SELECT COALESCE(MAX(ocorrencia), 0) + 1 FROM photos WHERE assinatura = ?",
+        (row["assinatura"],),
+    ).fetchone()[0]
+    cursor = store._conn.execute(
+        "INSERT INTO photos (key, chat, source, message_id, remetente, data, hora, timestamp,"
+        " legenda, contexto, foto_arquivo, foto_evidencia, foto_existe, midia_pendente,"
+        " incluir, status, created_at, pontos, pontos_origem, pontos_motivo, assinatura,"
+        " ocorrencia)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            f"{row['key']}-copia{ocorrencia}",
+            row["chat"],
+            row["source"],
+            row["message_id"],
+            row["remetente"],
+            row["data"],
+            row["hora"],
+            row["timestamp"],
+            row["legenda"],
+            row["contexto"],
+            row["foto_arquivo"],
+            row["foto_evidencia"],
+            row["foto_existe"],
+            row["midia_pendente"],
+            row["incluir"],
+            row["status"],
+            created_at,
+            row["pontos"],
+            row["pontos_origem"],
+            row["pontos_motivo"],
+            row["assinatura"],
+            ocorrencia,
+        ),
+    )
+    store._conn.commit()
+    return int(cursor.lastrowid or 0)
+
+
+def test_resolve_duplicates_keeps_one_and_sends_the_rest_to_the_trash(
+    tmp_path: Path,
+) -> None:
+    store = Store(tmp_path / "wzsearch.db")
+    import_photos([_zip(tmp_path, f"{_CHAT}.zip", com_midia=True)], store)
+    original = store.rows()
+    assert len(original) == 3
+    # duas cópias do primeiro registro, vindas de importações anteriores
+    primeiro = int(original[0]["id"])
+    _copia(store, primeiro, "2026-01-01T10:00:00")
+    _copia(store, primeiro, "2026-02-01T10:00:00")
+    assert len(store.rows()) == 5
+
+    encontradas = store.find_duplicates()
+    assert len(encontradas.groups) == 1
+    assert encontradas.copies == 2
+
+    resultado = store.resolve_duplicates(encontradas)
+    assert (resultado.groups, resultado.removed) == (1, 2)
+    assert len(store.rows()) == 3
+    assert len(store.rows(include_deleted=True)) == 5  # as cópias estão na lixeira
+    assert store.counts()["deleted"] == 2
+    assert store.find_duplicates().empty  # resolver de novo não acha mais nada
+
+
+def test_resolving_duplicates_inherits_the_photo_and_the_decided_score(tmp_path: Path) -> None:
+    """A linha que fica não perde o que a cópia tinha (foto e ajuste seu)."""
+    store = Store(tmp_path / "wzsearch.db")
+    import_photos([_txt(tmp_path, f"{_CHAT}.txt")], store)
+    primeiro = store.rows()[0]
+    row_id = int(primeiro["id"])
+    assert primeiro["foto_existe"] == "nao"
+
+    # a cópia veio de um export com a mídia e com a pontuação ajustada na mão
+    copia_id = _copia(store, row_id, "2026-02-01T10:00:00")
+    store._conn.execute(
+        "UPDATE photos SET media = ?, foto_existe = 'sim', midia_pendente = 'nao' WHERE id = ?",
+        (b"IMAGEM", copia_id),
+    )
+    store.set_points([copia_id], 5, motivo="conferi com ela")
+    store._conn.commit()
+
+    resultado = store.resolve_duplicates()
+    assert resultado.removed == 1
+    mantida = store.rows()[0]
+    assert mantida["id"] == row_id
+    assert mantida["foto_existe"] == "sim"
+    assert store.media(row_id) == b"IMAGEM"
+    assert (mantida["pontos"], mantida["pontos_motivo"]) == (5, "conferi com ela")
+    assert resultado.completed == 1
+
+
+def test_resolve_duplicates_does_nothing_when_there_is_nothing_to_do() -> None:
+    store = Store(":memory:")
+    store.add_rows([_ROW])
+    assert store.find_duplicates().empty
+    assert store.resolve_duplicates().removed == 0

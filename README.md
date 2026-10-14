@@ -229,12 +229,13 @@ Duas abas de trabalho + menus:
 
 - **Explorar** — a tela principal. Arraste o export (`.zip`/`.txt`) e clique em
   **Gerar**: as fotos vão para uma **base local** e ficam salvas entre sessões.
-  Reimportar **nunca duplica**: a identidade de cada foto é a mensagem em si (chat,
-  data/hora, remetente, arquivo e legenda), não o nome do arquivo do export — então
-  exportar a conversa de novo (o WhatsApp chama a segunda de `… (1).zip`) e apontar para
-  ela só acrescenta o que é novo. E se você importou **só o texto** antes, importar o
-  `.zip` depois **completa** aquelas fotos que estavam “sem o arquivo no export” em vez
-  de criar linhas repetidas — o status do rodapé diz quantas foram completadas.
+  Reimportar **nunca duplica**: a identidade de cada foto são os **dados da própria
+  mensagem** (data/hora, remetente, arquivo e legenda) — o nome do arquivo do export e o
+  nome do chat **não** entram, então exportar a conversa de novo (mesmo renomeada pelo
+  WhatsApp para `… (1).zip`) e apontar para ela só acrescenta o que é novo. E se você
+  importou **só o texto** antes, importar o `.zip` depois **completa** aquelas fotos que
+  estavam “sem o arquivo no export” em vez de criar linhas repetidas — o status do rodapé
+  diz quantas foram completadas.
   A lista tem **busca por termo ou regex**,
   filtros (remetente, período, só sem arquivo, só sugestões automáticas),
   **☑ incluir/excluir da análise** (botão ou tecla Espaço), **Pontos** (ver abaixo),
@@ -258,7 +259,7 @@ Duas abas de trabalho + menus:
 - **⚙ Ajustes** (canto superior direito) — **Remetentes** (dar nome a quem aparece como
   número; o nome vale na lista, nos filtros e nas Análises), **Lixeira** (restaurar ou
   excluir de vez), **Auditoria de pontuação** (ver abaixo) e **Dados e backup**
-  (backup num `.zip`, restaurar, apagar tudo).
+  (backup num `.zip`, restaurar, apagar tudo e **resolver duplicatas**).
 - **Menu Ajuda** — *Como usar…* abre uma janela com **tópicos** à esquerda (Começando,
   Exportar com as mídias, Explorar, Pontuação, Análises, Auditoria da pontuação,
   Remetentes, Lixeira, Dados, Privacidade), conteúdo formatado à direita
@@ -333,6 +334,22 @@ Em **⚙ Ajustes → Auditoria de pontuação…** há uma janela só para confe
   **+1 ponto** / **−1 ponto** corrigem (e a linha passa a ser sua, fora do alcance do
   “Reavaliar”); **Reavaliar pelas legendas** refaz a leitura de tudo que você não decidiu.
 - As colunas ordenam clicando no título, como nas outras tabelas.
+
+### Duplicatas (sanitização)
+
+Em **⚙ Ajustes → Dados e backup → Duplicatas** o app procura registros com o **mesmo
+conteúdo de mensagem** (data/hora, remetente, arquivo e legenda) que vieram de
+**importações diferentes** — isto é, a mesma foto gravada mais de uma vez (o que as
+versões anteriores podiam fazer quando o export era reexportado com outro nome).
+
+- A lista mostra cada caso: quando, remetente, arquivo, legenda, quantas cópias e **de
+  onde vieram** (os arquivos de export).
+- **Resolver** mantém **uma de cada** e manda as cópias para a **lixeira** (dá para
+  restaurar). A linha que fica herda a **foto** e a **pontuação** que você já tinha
+  ajustado (com o motivo), então nada do que você decidiu se perde.
+- Mensagens que apenas *parecem* iguais (duas `<Mídia oculta>` da mesma pessoa no mesmo
+  segundo, importadas juntas) são mensagens diferentes: o app só trata como duplicata
+  quando as cópias vieram de importações separadas, e deixa essas em paz.
 
 ### Onde ficam os dados
 

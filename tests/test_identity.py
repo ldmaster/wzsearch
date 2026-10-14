@@ -1,6 +1,11 @@
 from typing import Any
 
-from wzsearch.identity import identity_key, signature_of, strip_copy_suffix
+from wzsearch.identity import (
+    duplicate_groups,
+    identity_key,
+    signature_of,
+    strip_copy_suffix,
+)
 
 
 def test_strip_copy_suffix_removes_whatsapp_renaming() -> None:
@@ -28,17 +33,12 @@ def _row(**extra: Any) -> dict[str, Any]:
 
 def test_signature_is_stable_for_the_same_message() -> None:
     assert signature_of(_row()) == signature_of(dict(_row()))
-    # o nome do arquivo do export e a posição da mensagem não entram na assinatura
+    # só os dados da mensagem entram: a fonte (arquivo do export, chat, posição) não
     assert signature_of(_row()) == signature_of(_row(source="outro nome.zip", message_id=99))
+    assert signature_of(_row()) == signature_of(_row(chat="Ana (1)"))
+    assert signature_of(_row()) == signature_of(_row(chat="outra conversa"))
     # nem diferenças de caixa/espaço no texto
     assert signature_of(_row()) == signature_of(_row(legenda="  Treino   de hoje "))
-
-
-def test_signature_ignores_the_copy_suffix_in_the_stored_chat() -> None:
-    """A base antiga gravou o chat com " (1)": a assinatura tem que casar igual."""
-    assert signature_of(_row(chat="Ana (1)")) == signature_of(_row(chat="Ana"))
-    assert signature_of(_row(chat="Conversa (2).zip")) == signature_of(_row(chat="Conversa.zip"))
-    assert signature_of(_row(chat="Grupo (antigo)")) == signature_of(_row(chat="Grupo (antigo)"))
 
 
 def test_signature_changes_with_the_message() -> None:
@@ -47,10 +47,36 @@ def test_signature_changes_with_the_message() -> None:
     assert base != signature_of(_row(remetente="Bruno"))
     assert base != signature_of(_row(foto_arquivo="outra.jpg"))
     assert base != signature_of(_row(legenda=""))
-    assert base != signature_of(_row(chat="Outro grupo"))
 
 
 def test_identity_key_joins_signature_and_occurrence() -> None:
     assinatura = signature_of(_row())
     assert identity_key(assinatura, 1) != identity_key(assinatura, 2)
     assert identity_key(assinatura, 1).startswith(assinatura)
+
+
+def test_duplicate_groups_finds_the_same_message_from_two_imports() -> None:
+    grupo = [
+        _row(id=1, created_at="2026-01-01T10:00:00", source="Conversa.zip"),
+        _row(id=2, created_at="2026-02-01T09:00:00", source="Conversa (1).zip"),
+    ]
+    assert duplicate_groups(grupo) == [grupo]
+
+
+def test_duplicate_groups_leaves_identical_messages_of_one_import_alone() -> None:
+    """Duas <Mídia oculta> iguais no mesmo segundo, importadas juntas, são distintas."""
+    juntas = [
+        _row(id=1, foto_arquivo="", legenda="", created_at="2026-01-01T10:00:00"),
+        _row(id=2, foto_arquivo="", legenda="", created_at="2026-01-01T10:00:00"),
+    ]
+    assert duplicate_groups(juntas) == []
+
+
+def test_duplicate_groups_ignores_different_messages() -> None:
+    diferentes = [
+        _row(id=1, created_at="2026-01-01T10:00:00"),
+        _row(id=2, remetente="Bruno", created_at="2026-02-01T09:00:00"),
+        _row(id=3, timestamp="2024-03-12 14:23:00", created_at="2026-02-01T09:00:00"),
+    ]
+    assert duplicate_groups(diferentes) == []
+    assert duplicate_groups([]) == []

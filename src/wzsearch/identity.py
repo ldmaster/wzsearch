@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 #: Separator that cannot appear in a name or a caption, so the parts cannot blur.
 _SEPARATOR = "\x1f"
@@ -52,15 +52,14 @@ def _text(row: Mapping[str, object], key: str) -> str:
 
 
 def signature_of(row: Mapping[str, object]) -> str:
-    """Return the stable signature of a record (a hash of what the message is).
+    """Return the stable signature of a record: a hash of the *message* only.
 
-    The chat is normalised here, and not only where it is read from the file:
-    the value stored by an older version may still carry the ``(1)`` a repeated
-    export put in the file name, and the same message has to land on the same
-    signature on both sides.
+    Only what the message itself says goes in: the moment, who sent it, the media
+    file and the caption. The chat is deliberately left out — its name comes from
+    the export file, and WhatsApp renames every new export (``… (1).zip``), so
+    depending on it would make the same message look new on a re-import.
     """
     parts = (
-        strip_copy_suffix(_text(row, "chat")),
         _text(row, "timestamp"),
         _text(row, "remetente"),
         _text(row, "foto_arquivo"),
@@ -72,3 +71,24 @@ def signature_of(row: Mapping[str, object]) -> str:
 def identity_key(signature: str, ocurrence: int) -> str:
     """Return the string that identifies a record: signature plus occurrence."""
     return f"{signature}-{ocurrence}"
+
+
+def duplicate_groups(rows: Sequence[Mapping[str, object]]) -> list[list[Mapping[str, object]]]:
+    """Group the records that are the same message, imported more than once.
+
+    The grouping is by the message data alone (see :func:`signature_of`). A group
+    only counts as duplicates when its rows did **not** come from the same
+    import — records added together share ``created_at``, so two messages that
+    merely look identical (two ``<Mídia oculta>`` from the same person in the
+    same second, imported in one go) are different messages and are left alone.
+    """
+    grouped: dict[str, list[Mapping[str, object]]] = {}
+    for row in rows:
+        grouped.setdefault(signature_of(row), []).append(row)
+    duplicates: list[list[Mapping[str, object]]] = []
+    for group in grouped.values():
+        if len(group) < 2:
+            continue
+        if len({str(row.get("created_at", "") or "") for row in group}) > 1:
+            duplicates.append(group)
+    return duplicates

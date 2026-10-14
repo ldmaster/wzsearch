@@ -68,6 +68,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_photos_identidade
     ON photos (assinatura, ocorrencia) WHERE assinatura <> '';
 """
 
+#: Version of the identity formula, kept in the database so a change to what the
+#: signature is made of can rebuild the rows of an existing base. (1 was the
+#: first version, which still had the chat name — derived from the export file —
+#: inside the signature.)
+_IDENTITY_VERSION = 2
+
 _FIELDS = (
     "chat",
     "source",
@@ -117,6 +123,32 @@ class AddResult:
     enriched: int
 
 
+@dataclass(frozen=True, slots=True)
+class DupResult:
+    """What the duplicate cleanup did."""
+
+    groups: int
+    removed: int
+    completed: int
+
+
+@dataclass(frozen=True, slots=True)
+class Duplicates:
+    """The copies found, ready to be shown before anything is removed."""
+
+    groups: tuple[tuple[Mapping[str, Any], ...], ...]
+
+    @property
+    def copies(self) -> int:
+        """How many records would be removed (all but one per group)."""
+        return sum(len(group) - 1 for group in self.groups)
+
+    @property
+    def empty(self) -> bool:
+        """Whether there is nothing to resolve."""
+        return not self.groups
+
+
 class Store:
     """Photo records persisted in a SQLite file (use ``":memory:"`` for tests)."""
 
@@ -142,23 +174,31 @@ class Store:
                 self._conn.execute(
                     f"ALTER TABLE photos ADD COLUMN {column} {definition}"  # noqa: S608 - fixed DDL
                 )
-        self._backfill_identities()
+        self._rebuild_identities()
         self._conn.executescript(_IDENTITY_INDEX)
 
-    def _backfill_identities(self) -> None:
-        """Give the records that came from an older version their identity.
+    def _identity_version(self) -> int:
+        """Version of the identity formula the stored records were built with."""
+        return int(self._conn.execute("PRAGMA user_version").fetchone()[0])
 
-        The occurrence counts the records with the same signature in date order,
-        which is the order they were imported in.
+    def _rebuild_identities(self) -> None:
+        """Give every record the identity of the current formula.
+
+        Runs when a database was written by a version whose signature was built
+        from different fields (or by a version that had no identity at all), so a
+        re-import still recognises the records that are already stored.
         """
-        pending = self._conn.execute(
-            "SELECT id, chat, timestamp, remetente, foto_arquivo, legenda FROM photos "
-            "WHERE assinatura = '' ORDER BY timestamp, id"
-        ).fetchall()
-        if not pending:
+        if self._identity_version() >= _IDENTITY_VERSION:
             return
+        rows = self._conn.execute(
+            "SELECT id, chat, timestamp, remetente, foto_arquivo, legenda FROM photos "
+            "ORDER BY timestamp, id"
+        ).fetchall()
+        # A assinatura nova pode colidir com a antiga de outra linha no meio do
+        # caminho; o índice volta depois, já com tudo recalculado.
+        self._conn.execute("DROP INDEX IF EXISTS idx_photos_identidade")
         counters: dict[str, int] = {}
-        for record in pending:
+        for record in rows:
             row = dict(record)
             signature = identity.signature_of(row)
             counters[signature] = counters.get(signature, 0) + 1
@@ -166,6 +206,7 @@ class Store:
                 "UPDATE photos SET assinatura = ?, ocorrencia = ? WHERE id = ?",
                 (signature, counters[signature], row["id"]),
             )
+        self._conn.execute(f"PRAGMA user_version = {_IDENTITY_VERSION}")  # noqa: S608 - fixed
         self._conn.commit()
 
     def close(self) -> None:
@@ -265,6 +306,65 @@ class Store:
             (data, "sim", "nao", _text(row, "foto_evidencia"), row_id),
         )
         return True
+
+    def find_duplicates(self) -> Duplicates:
+        """Return the records that are the same message recorded more than once."""
+        groups = identity.duplicate_groups(self.rows())
+        return Duplicates(tuple(tuple(group) for group in groups))
+
+    def resolve_duplicates(self, duplicates: Duplicates | None = None) -> DupResult:
+        """Keep one record per duplicate group and send the copies to the trash.
+
+        Nothing decided is thrown away: before removing the copies, the record
+        that stays inherits the photo bytes (when it did not have them) and a
+        score somebody had set by hand. Removed records are soft deleted, so they
+        can still be restored from the trash.
+        """
+        found = duplicates if duplicates is not None else self.find_duplicates()
+        removed = 0
+        completed = 0
+        for group in found.groups:
+            keeper = self._keeper(group)
+            keeper_id = int(str(keeper["id"]))
+            for row in group:
+                row_id = int(str(row["id"]))
+                if row_id == keeper_id:
+                    continue
+                if self._inherit(keeper_id, keeper, row):
+                    completed += 1
+                removed += self.delete([row_id])
+        return DupResult(groups=len(found.groups), removed=removed, completed=completed)
+
+    def _keeper(self, group: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
+        """The record that stays: the oldest one (the copies feed it)."""
+        return min(group, key=lambda row: int(str(row["id"])))
+
+    def _inherit(self, keeper_id: int, keeper: Mapping[str, Any], other: Mapping[str, Any]) -> bool:
+        """Give the record that stays what the copy has and it does not."""
+        changed = False
+        other_id = int(str(other["id"]))
+        data = self.media(other_id)
+        if data is not None and self.media(keeper_id) is None:
+            self._conn.execute(
+                "UPDATE photos SET media = ?, foto_existe = 'sim', midia_pendente = 'nao', "
+                "foto_evidencia = ? WHERE id = ?",
+                (data, _text(other, "foto_evidencia"), keeper_id),
+            )
+            changed = True
+        decided = _text(other, "pontos_origem") in score.ORIGEM_DECIDIDA
+        if decided and _text(keeper, "pontos_origem") not in score.ORIGEM_DECIDIDA:
+            self._conn.execute(
+                "UPDATE photos SET pontos = ?, pontos_origem = ?, pontos_motivo = ? WHERE id = ?",
+                (
+                    max(int(other.get("pontos") or score.PONTOS_MIN), score.PONTOS_MIN),
+                    _text(other, "pontos_origem"),
+                    _text(other, "pontos_motivo"),
+                    keeper_id,
+                ),
+            )
+            changed = True
+        self._conn.commit()
+        return changed
 
     def rows(
         self, *, include_deleted: bool = False, only_included: bool = False

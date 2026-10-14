@@ -203,6 +203,10 @@ TOPICS: tuple[Topic, ...] = (
             "incluídas), os nomes e os avatares.",
             "“Restaurar backup…” substitui os dados atuais pelos do arquivo.",
             "“Apagar todos os dados” limpa tudo — é irreversível.",
+            "**Duplicatas** procura registros com o mesmo conteúdo de mensagem (data/hora, "
+            "remetente, arquivo e legenda) que vieram de importações diferentes — a mesma "
+            "foto gravada mais de uma vez — e mantém uma de cada, mandando as cópias para "
+            "a lixeira. A que fica herda a foto e a pontuação que você já tinha ajustado.",
         ),
         tip="O backup é a forma de levar o histórico para outra máquina.",
     ),
