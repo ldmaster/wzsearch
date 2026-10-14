@@ -17,7 +17,10 @@ def test_is_inside_never_blows_up_on_a_non_widget() -> None:
     """O Tk pode devolver o caminho do widget (string) em vez do widget."""
     import tkinter as tk
 
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError:  # sem display (CI): o teste não se aplica
+        pytest.skip("sem display para criar uma janela")
     root.withdraw()
     painel = tk.Frame(root)
     filho = tk.Frame(painel)
