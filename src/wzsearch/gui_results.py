@@ -49,6 +49,7 @@ _DETAIL_KEYS = (
     "hora",
     "timestamp",
     "chat",
+    "source",
     "message_id",
     "legenda",
     "contexto",

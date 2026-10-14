@@ -162,6 +162,7 @@ def _photo_row(
     timestamp = message.timestamp
     return {
         "foto_id": photo_id,
+        "source": source_name,
         "remetente": message.sender or "",
         "telefone_remetente": sender_phone(message.sender),
         "data": timestamp.date().isoformat(),

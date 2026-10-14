@@ -34,6 +34,13 @@ def test_signature_is_stable_for_the_same_message() -> None:
     assert signature_of(_row()) == signature_of(_row(legenda="  Treino   de hoje "))
 
 
+def test_signature_ignores_the_copy_suffix_in_the_stored_chat() -> None:
+    """A base antiga gravou o chat com " (1)": a assinatura tem que casar igual."""
+    assert signature_of(_row(chat="Ana (1)")) == signature_of(_row(chat="Ana"))
+    assert signature_of(_row(chat="Conversa (2).zip")) == signature_of(_row(chat="Conversa.zip"))
+    assert signature_of(_row(chat="Grupo (antigo)")) == signature_of(_row(chat="Grupo (antigo)"))
+
+
 def test_signature_changes_with_the_message() -> None:
     base = signature_of(_row())
     assert base != signature_of(_row(timestamp="2024-03-12 14:23:00"))

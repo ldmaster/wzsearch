@@ -391,3 +391,27 @@ def test_an_old_database_does_not_duplicate_on_reimport(tmp_path: Path) -> None:
     resultado = import_photos([_zip(tmp_path, f"{_CHAT} (1).zip", com_midia=True)], reaberta)
     assert resultado.added == 0
     assert len(reaberta.rows()) == 3
+
+
+def test_old_rows_stored_with_a_renamed_chat_are_recognised(tmp_path: Path) -> None:
+    """A versão anterior gravava o chat com o " (1)" do arquivo reexportado."""
+    store = Store(tmp_path / "wzsearch.db")
+    import_photos([_zip(tmp_path, f"{_CHAT} (1).zip", com_midia=True)], store)
+    assert len(store.rows()) == 3
+
+    # como ficava numa base antiga: o chat com o sufixo e sem identidade
+    store._conn.execute("UPDATE photos SET chat = 'Ana (1)', assinatura = '', ocorrencia = 1")
+    store._conn.commit()
+    store.close()
+
+    reaberta = Store(tmp_path / "wzsearch.db")
+    resultado = import_photos([_zip(tmp_path, f"{_CHAT}.zip", com_midia=True)], reaberta)
+    assert resultado.added == 0
+    assert len(reaberta.rows()) == 3
+
+
+def test_the_import_records_which_export_brought_each_photo(tmp_path: Path) -> None:
+    store = Store(":memory:")
+    export = _zip(tmp_path, f"{_CHAT}.zip", com_midia=True)
+    import_photos([export], store)
+    assert {row["source"] for row in store.rows()} == {export.name}

@@ -52,9 +52,15 @@ def _text(row: Mapping[str, object], key: str) -> str:
 
 
 def signature_of(row: Mapping[str, object]) -> str:
-    """Return the stable signature of a record (a hash of what the message is)."""
+    """Return the stable signature of a record (a hash of what the message is).
+
+    The chat is normalised here, and not only where it is read from the file:
+    the value stored by an older version may still carry the ``(1)`` a repeated
+    export put in the file name, and the same message has to land on the same
+    signature on both sides.
+    """
     parts = (
-        _text(row, "chat"),
+        strip_copy_suffix(_text(row, "chat")),
         _text(row, "timestamp"),
         _text(row, "remetente"),
         _text(row, "foto_arquivo"),
