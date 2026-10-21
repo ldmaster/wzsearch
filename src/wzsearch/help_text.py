@@ -98,19 +98,22 @@ TOPICS: tuple[Topic, ...] = (
     ),
     Topic(
         title="Pontuação",
-        summary="Cada foto vale de 1 ponto para cima; foto de exercício vale 2.",
+        summary="A foto pontua pela legenda: 1 ponto, 2 se for exercício — e zero sem legenda.",
         bullets=(
-            "Toda foto entra valendo 1 ponto. Quando a legenda (ou a mensagem seguinte "
-            "da mesma pessoa) fala de exercício — treino, academia, corrida, bike, "
-            "caminhada e afins — a foto já entra valendo 2.",
+            "Com legenda, a foto entra valendo 1 ponto. Quando a legenda (ou a mensagem "
+            "seguinte da mesma pessoa) fala de exercício — treino, academia, corrida, "
+            "bike, caminhada e afins — ela entra valendo 2.",
+            "Sem legenda, a foto fica com **zero** ponto: não há texto para o app avaliar. "
+            "Elas aparecem na Auditoria, no filtro “Sem pontuação (sem legenda)”, para você "
+            "dar pontos se quiser.",
             "As fotos que já estavam na base também são avaliadas sozinhas: ao abrir o "
             "app, as que a legenda marca viram 2 pontos sem você clicar em nada.",
             "Para ajustar, clique no “−” ou no “+” da coluna Pontos, na própria linha: "
             "o ponto sai ou entra na hora e a Análises se atualiza.",
             "Com várias linhas selecionadas, use o menu “Pontos ▾” da barra de cima "
             "(ou as teclas + e −).",
-            "O mínimo é 1 ponto: o “−” nunca deixa a foto abaixo disso. Não há máximo, "
-            "então dá para usar a pontuação como peso, se você quiser.",
+            "O mínimo é 0 e não há máximo — o “−” leva a foto a zero e o “+” pode passar "
+            "de 2, se você quiser usar a pontuação como peso.",
             "As fotos que a legenda marcou como exercício ficam com uma cor diferente na "
             "lista, e o filtro “só sugestões automáticas” mostra essas para você conferir.",
             "Ajustou na mão? O app não mexe mais nessa linha. O “Reavaliar pelas legendas” "
@@ -154,13 +157,18 @@ TOPICS: tuple[Topic, ...] = (
         summary="Conferir, uma por uma, por que cada foto recebeu os pontos que recebeu.",
         bullets=(
             "Abra em ⚙ Ajustes → Auditoria de pontuação…",
-            "O topo mostra o resumo: quantas fotos, quantos pontos, quantas sugestões "
-            "ainda para revisar e quantas ficaram fora do padrão (3 pontos ou mais).",
-            "“Mostrar:” filtra por situação — sugestões a revisar, confirmadas, ajustadas "
-            "por você, fora do padrão ou todas. Dá para combinar com um remetente só.",
-            "A coluna “Motivo da pontuação” diz qual palavra casou e onde: na legenda ou "
-            "na mensagem seguinte da mesma pessoa. Selecionando a linha, o painel da "
-            "direita mostra a foto, a legenda e o contexto completos.",
+            "O topo mostra o resumo (fotos, pontos, sugestões a revisar, ajustes seus, "
+            "sem pontuação e fora do padrão) e ele **segue o remetente escolhido**.",
+            "“Mostrar:” filtra por situação — sugestões a revisar, **sem pontuação (sem "
+            "legenda)**, confirmadas, ajustadas por você, fora do padrão ou todas.",
+            "“Remetente:” ao lado mostra só o que uma pessoa postou; combine com a "
+            "situação para achar, por exemplo, as fotos sem pontuação de alguém.",
+            "As fotos **sem legenda** ficam com zero ponto: use o filtro “Sem pontuação "
+            "(sem legenda)”, selecione as que valem algo e clique em “+1 ponto” (com o "
+            "motivo, se quiser).",
+            "A coluna “Motivo da pontuação” diz por que o app deu aquele valor — a palavra "
+            "que casou e onde (na legenda ou na mensagem seguinte), ou “sem legenda”. "
+            "Selecionando a linha, o painel da direita mostra a foto e os textos completos.",
             "No painel da direita também aparece o que o arquivo diz: nome (com a data "
             "que o WhatsApp usou), tamanho, dimensões, se é retrato/paisagem e, quando o "
             "EXIF sobreviveu, data de captura e câmera. Dá para comparar a data do nome "

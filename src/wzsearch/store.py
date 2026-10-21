@@ -482,16 +482,17 @@ class Store:
         return updated
 
     def rescore_unevaluated(self) -> int:
-        """Score the records no caption has looked at yet.
+        """Score from the captions every record nobody has decided yet.
 
-        Called when the app opens: a base imported before the score existed (or
-        by the CLI) gets its exercise photos marked without anyone clicking
-        anything. Records adjusted by hand are never touched, and the pass is
-        cheap to repeat — a caption that matches nothing simply stays at one
-        point.
+        Called when the app opens: a base imported before the scoring rule
+        existed (or by the CLI) follows it, and the suggestions made by an
+        earlier rule are re-read. Records adjusted or confirmed by hand are never
+        touched, and repeating the pass changes nothing.
         """
         rows = self.rows(include_deleted=True)
-        pending = [row for row in rows if not str(row.get("pontos_origem") or "")]
+        pending = [
+            row for row in rows if str(row.get("pontos_origem") or "") not in score.ORIGEM_DECIDIDA
+        ]
         if not pending:
             return 0
         return self.rescore_auto(score.suggestions(pending))

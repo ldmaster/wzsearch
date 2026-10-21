@@ -4,7 +4,8 @@ from wzsearch.score import (
     ORIGEM_AUTO,
     ORIGEM_VAZIA,
     PONTOS_EXERCICIO,
-    PONTOS_MIN,
+    PONTOS_PADRAO,
+    PONTOS_ZERO,
     fold,
     is_exercise,
     match_reason,
@@ -40,26 +41,41 @@ def test_is_exercise_ignores_ambiguous_words() -> None:
     assert not is_exercise("", "")
 
 
-def test_score_for_defaults_to_one_point() -> None:
+def test_score_for_gives_one_point_to_a_photo_with_a_caption() -> None:
     assert score_for({"legenda": "olha o bolo", "contexto_provavel": "dia 02"}) == (
-        PONTOS_MIN,
+        PONTOS_PADRAO,
         ORIGEM_VAZIA,
     )
-    assert score_for({}) == (PONTOS_MIN, ORIGEM_VAZIA)
+
+
+def test_score_for_gives_zero_to_a_photo_without_a_caption() -> None:
+    assert score_for({}) == (PONTOS_ZERO, ORIGEM_VAZIA)
+    assert score_for({"legenda": "   ", "contexto_provavel": "treino às 7h"}) == (
+        PONTOS_ZERO,
+        ORIGEM_VAZIA,
+    )
+    assert score_for({"legenda": "", "foto_arquivo": "IMG-1.jpg"}) == (
+        PONTOS_ZERO,
+        ORIGEM_VAZIA,
+    )
 
 
 def test_score_for_flags_exercise_as_suggestion() -> None:
     assert score_for({"legenda": "treino concluído"}) == (PONTOS_EXERCICIO, ORIGEM_AUTO)
-    assert score_for({"contexto_provavel": "academia às 7h"}) == (PONTOS_EXERCICIO, ORIGEM_AUTO)
+    assert score_for({"legenda": "bom dia", "contexto_provavel": "academia às 7h"}) == (
+        PONTOS_EXERCICIO,
+        ORIGEM_AUTO,
+    )
 
 
 def test_suggestions_map_every_record_with_an_id() -> None:
     rows: list[dict[str, Any]] = [
         {"id": 1, "legenda": "treino"},
         {"id": 2, "legenda": "bolo"},
+        {"id": 3, "legenda": ""},
         {"legenda": "sem id"},
     ]
-    assert suggestions(rows) == {1: PONTOS_EXERCICIO, 2: PONTOS_MIN}
+    assert suggestions(rows) == {1: PONTOS_EXERCICIO, 2: PONTOS_PADRAO, 3: PONTOS_ZERO}
 
 
 def test_matched_terms_lists_the_words_without_repeating() -> None:

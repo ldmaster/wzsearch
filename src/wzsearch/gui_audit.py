@@ -53,9 +53,11 @@ _DISPLAY_COLUMNS: tuple[tuple[str, str, int, Literal["w", "center"]], ...] = (
 _COLUMN_LABELS = {key: title for key, title, _, _ in _DISPLAY_COLUMNS}
 
 _COLUMN_HINTS = {
-    "pontos": "Pontuação do registro: 1 por padrão, 2 quando a legenda sugere exercício.",
+    "pontos": "Pontuação do registro: 1 quando a foto tem legenda, 2 quando a legenda "
+    "sugere exercício e 0 quando a foto veio sem legenda.",
     "situacao": "Se a pontuação foi sugerida pela legenda (a revisar), confirmada por "
-    "você ou ajustada na mão; “fora do padrão” é o que passou de 2 pontos.",
+    "você, ajustada na mão ou zerada por falta de legenda; “fora do padrão” é o que "
+    "passou de 2 pontos.",
     "remetente": "Quem postou a foto.",
     "data": "Data da mensagem no export.",
     "legenda": "O texto que veio junto da foto.",
@@ -150,7 +152,7 @@ class ScoreAuditWindow(ttk.Frame):
             filtros, textvariable=self.sender_var, width=24, state="readonly"
         )
         self.sender_box.pack(side="left", padx=6)
-        self.sender_box.bind("<<ComboboxSelected>>", lambda _event: self._fill())
+        self.sender_box.bind("<<ComboboxSelected>>", lambda _event: self.reload())
         add_hints(
             {
                 most_label: "Separa o que a legenda sugeriu (a revisar), o que você já "
@@ -178,7 +180,8 @@ class ScoreAuditWindow(ttk.Frame):
                 "(o “Reavaliar” não mexe mais nela).",
                 plus_button: "Soma um ponto nas linhas selecionadas; a linha passa a ser "
                 "sua e o “Reavaliar” não mexe mais nela.",
-                minus_button: "Tira um ponto das linhas selecionadas; o mínimo é 1.",
+                minus_button: "Tira um ponto das linhas selecionadas; no zero a foto fica "
+                "sem pontuação (sem legenda).",
                 rescore_button: "Relê as legendas de tudo que você ainda não decidiu.",
             }
         )
@@ -251,12 +254,15 @@ class ScoreAuditWindow(ttk.Frame):
         self.sender_box.configure(values=[_ALL_SENDERS, *nomes])
         if self.sender_var.get() not in [*nomes, _ALL_SENDERS]:
             self.sender_var.set(_ALL_SENDERS)
-        totals = score_audit(self._rows)
+        sender = self.sender_var.get()
+        escopo = audit_rows(self._rows, "todas", None if sender == _ALL_SENDERS else sender)
+        totals = score_audit(escopo)
         self.summary_label.configure(
             text=(
                 f"{totals.photos} foto(s) · {totals.points} ponto(s) · "
                 f"{totals.suggestions} sugestão(ões) a revisar · "
                 f"{totals.manual} ajuste(s) seu(s)"
+                + (f" · {totals.without_points} sem pontuação" if totals.without_points else "")
                 + (f" · {totals.over} fora do padrão" if totals.over else "")
             )
         )

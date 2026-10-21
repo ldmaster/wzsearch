@@ -22,6 +22,7 @@ from .score import (
     ORIGEM_MANUAL,
     PONTOS_EXERCICIO,
     PONTOS_MIN,
+    PONTOS_ZERO,
     match_reason,
 )
 
@@ -148,6 +149,7 @@ class PhotoStats:
     avg_points: float
     exercise: int
     auto_points: int
+    without_points: int
     participants: tuple[tuple[str, int], ...]
     per_day: tuple[tuple[str, int], ...]
     per_month: tuple[tuple[str, int], ...]
@@ -229,6 +231,7 @@ def is_auto_scored(row: Row) -> bool:
 #: (key, label) of every situation the score audit can show, in menu order.
 SITUATIONS: tuple[tuple[str, str], ...] = (
     ("auto", "Sugestões a revisar"),
+    ("zero", "Sem pontuação (sem legenda)"),
     ("confirmado", "Sugestões confirmadas"),
     ("manual", "Ajustadas por você"),
     ("alto", "3+ pontos (fora do padrão)"),
@@ -239,6 +242,8 @@ SITUATIONS: tuple[tuple[str, str], ...] = (
 
 def score_situation(row: Row) -> str:
     """Which situation a record is in, as a key of :data:`SITUATIONS`."""
+    if points_of(row) == PONTOS_ZERO:
+        return "zero"
     origin = _text(row, "pontos_origem")
     if origin == ORIGEM_CONFIRMADO:
         return "confirmado"
@@ -254,17 +259,26 @@ def situation_label(row: Row) -> str:
     points = points_of(row)
     if points > PONTOS_EXERCICIO:
         return f"{points} pontos (fora do padrão)"
+    situation = score_situation(row)
+    if situation == "zero":
+        if _text(row, "pontos_origem") in {ORIGEM_MANUAL, ORIGEM_CONFIRMADO}:
+            return "Zerada por você"
+        return "Sem pontuação (sem legenda)"
     return {
         "auto": "Sugestão a revisar",
         "confirmado": "Sugestão confirmada",
         "manual": "Ajustada por você",
-        "sem_sugestao": "1 ponto (sem sugestão)",
-    }[score_situation(row)]
+        "sem_sugestao": "1 ponto (legenda sem exercício)",
+    }[situation]
 
 
 def score_reason(row: Row) -> str:
     """Why a record has the score it has (empty when nothing decided it)."""
     situation = score_situation(row)
+    if situation == "zero":
+        if _text(row, "pontos_origem") in {ORIGEM_MANUAL, ORIGEM_CONFIRMADO}:
+            return "zerada por você"
+        return "sem legenda"
     if situation in {"auto", "confirmado"}:
         return match_reason(row) or "sugerida pela legenda"
     if situation == "manual":
@@ -280,8 +294,10 @@ def matches_situation(row: Row, situation: str, sender: str | None = None) -> bo
         return True
     if situation == "alto":
         return points_of(row) > PONTOS_EXERCICIO
+    if situation == "zero":
+        return points_of(row) == PONTOS_ZERO
     if situation == "revisadas":
-        return score_situation(row) in {"manual", "confirmado"}
+        return _text(row, "pontos_origem") in {ORIGEM_MANUAL, ORIGEM_CONFIRMADO}
     return score_situation(row) == situation
 
 
@@ -300,6 +316,7 @@ class ScoreAudit:
     confirmed: int
     manual: int
     over: int
+    without_points: int
 
 
 def score_audit(rows: Sequence[Row]) -> ScoreAudit:
@@ -309,8 +326,9 @@ def score_audit(rows: Sequence[Row]) -> ScoreAudit:
         points=sum(points_of(row) for row in rows),
         suggestions=sum(1 for row in rows if score_situation(row) == "auto"),
         confirmed=sum(1 for row in rows if score_situation(row) == "confirmado"),
-        manual=sum(1 for row in rows if score_situation(row) == "manual"),
+        manual=sum(1 for row in rows if _text(row, "pontos_origem") == ORIGEM_MANUAL),
         over=sum(1 for row in rows if points_of(row) > PONTOS_EXERCICIO),
+        without_points=sum(1 for row in rows if points_of(row) == PONTOS_ZERO),
     )
 
 
@@ -447,6 +465,7 @@ def photo_stats(rows: Sequence[Row]) -> PhotoStats:
         avg_points=total_points / total if total else 0.0,
         exercise=sum(1 for row in rows if is_scored_as_exercise(row)),
         auto_points=sum(1 for row in rows if is_auto_scored(row)),
+        without_points=sum(1 for row in rows if points_of(row) == PONTOS_ZERO),
         participants=tuple(senders.most_common()),
         per_day=tuple(sorted(days.items())),
         per_month=tuple(sorted(months.items())),

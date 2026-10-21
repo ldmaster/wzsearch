@@ -84,9 +84,9 @@ _DISPLAY_COLUMNS: tuple[tuple[str, str, int, Literal["w", "center"]], ...] = (
 _COLUMN_HINTS = {
     "incluido": "☑ marca a linha para entrar nas Análises (clique na célula ou use a "
     "tecla Espaço). Desmarcada, a foto fica só na lista.",
-    "pontos": "Pontuação do registro: 1 ponto por padrão, 2 quando a legenda sugere "
-    "exercício. Clique na metade esquerda da célula para tirar um ponto e na direita "
-    "para somar.",
+    "pontos": "Pontuação do registro: 1 quando a foto tem legenda, 2 quando a legenda "
+    "sugere exercício e 0 quando veio sem legenda. Clique na metade esquerda da célula "
+    "para tirar um ponto e na direita para somar.",
     "pontos_motivo": "O motivo que você escreveu na auditoria ao ajustar/confirmar a "
     "pontuação desta foto.",
     "remetente": "Quem mandou a foto (um número vira nome em ⚙ Ajustes → Remetentes).",

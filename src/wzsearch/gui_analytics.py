@@ -24,6 +24,7 @@ _METRIC_LABELS = {
     "avg_points": "Média de pontos por foto",
     "exercise": "Fotos de exercício (2 pts)",
     "auto_points": "Sugestões a revisar",
+    "without_points": "Sem pontuação (sem legenda)",
     "participants": "Participantes",
     "period": "Período",
     "active_days": "Dias com fotos",
@@ -51,14 +52,17 @@ _METRIC_HINTS = {
     "a legenda e a marca da mídia na mensagem. Sem arquivo não há imagem, tamanho nem "
     "metadados — costuma acontecer com mídia que expirou, foi apagada ou que o WhatsApp "
     "não incluiu na exportação (veja Ajuda → Exportar com as mídias).",
-    "total_points": "Soma das pontuações: 1 ponto por foto, 2 quando a legenda (ou a "
-    "mensagem seguinte da mesma pessoa) fala de exercício. Você ajusta na lista ou na "
-    "auditoria.",
+    "total_points": "Soma das pontuações: 1 ponto quando a foto tem legenda, 2 quando a "
+    "legenda (ou a mensagem seguinte da mesma pessoa) fala de exercício, e 0 quando veio "
+    "sem legenda. Você ajusta na lista ou na auditoria.",
     "avg_points": "Pontuação total dividida pelo número de fotos analisadas.",
     "exercise": "Fotos valendo 2 pontos ou mais: as sugeridas pela legenda que você "
     "aceitou e as que você pontuou na mão.",
     "auto_points": "Sugestões automáticas da legenda que ainda não foram revisadas — "
     "abra a auditoria para confirmar ou corrigir.",
+    "without_points": "Fotos que vieram sem legenda e por isso ficaram com zero ponto. "
+    "Elas aparecem no filtro “Sem pontuação (sem legenda)” da auditoria, onde você pode "
+    "dar pontos a elas.",
     "participants": "Quantas pessoas diferentes postaram fotos no recorte.",
     "period": "Da primeira à última foto do recorte.",
     "active_days": "Quantos dias diferentes têm pelo menos uma foto.",
@@ -386,6 +390,10 @@ def _format_metric(stats: PhotoStats, key: str) -> str:
         return f"{stats.exercise} ({stats.exercise / stats.total:.0%})"
     if key == "auto_points":
         return str(stats.auto_points)
+    if key == "without_points":
+        if not stats.total:
+            return "—"
+        return f"{stats.without_points} ({stats.without_points / stats.total:.0%})"
     if key == "participants":
         return str(len(stats.participants))
     if key == "period":

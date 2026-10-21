@@ -120,17 +120,27 @@ def test_adjust_points_keeps_the_minimum_and_marks_manual() -> None:
     store = Store(":memory:")
     store.add_rows([_ROW])
     row_id = int(store.rows()[0]["id"])
+    assert store.rows()[0]["pontos"] == 1  # a legenda dá 1 ponto
 
     assert store.adjust_points([row_id], -1) == 1
     stored = store.rows()[0]
-    assert stored["pontos"] == 1
+    assert stored["pontos"] == 0  # o piso é zero
     assert stored["pontos_origem"] == "manual"
 
-    assert store.adjust_points([row_id], 1) == 1
-    assert store.rows()[0]["pontos"] == 2
+    assert store.adjust_points([row_id], -1) == 1
+    assert store.rows()[0]["pontos"] == 0
 
-    assert store.set_points([row_id], 0) == 1
+    assert store.adjust_points([row_id], 1) == 1
     assert store.rows()[0]["pontos"] == 1
+
+    assert store.set_points([row_id], -3) == 1
+    assert store.rows()[0]["pontos"] == 0
+
+
+def test_a_photo_without_a_caption_arrives_with_zero_points() -> None:
+    store = Store(":memory:")
+    store.add_rows([{**_ROW, "legenda": "", "contexto_provavel": "treino às 7h"}])
+    assert store.rows()[0]["pontos"] == 0
 
 
 def test_rescore_auto_leaves_manual_scores_alone() -> None:

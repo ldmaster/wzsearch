@@ -142,12 +142,13 @@ def test_caption_words() -> None:
     assert "kkk" not in words
 
 
-def test_rows_without_a_score_count_as_one_point() -> None:
+def test_rows_without_a_score_count_as_zero() -> None:
     stats = photo_stats(ROWS)
-    assert stats.total_points == 4
-    assert stats.avg_points == 1.0
+    assert stats.total_points == 0
+    assert stats.avg_points == 0.0
     assert stats.exercise == 0
     assert stats.auto_points == 0
+    assert stats.without_points == 4
 
 
 def test_points_metrics_and_per_sender() -> None:
@@ -155,12 +156,14 @@ def test_points_metrics_and_per_sender() -> None:
         {"remetente": "Ana", "data": "2024-03-01", "pontos": 2, "pontos_origem": "auto"},
         {"remetente": "Ana", "data": "2024-03-02", "pontos": 3, "pontos_origem": "manual"},
         {"remetente": "Bruno", "data": "2024-03-03", "pontos": "1", "pontos_origem": ""},
+        {"remetente": "Bruno", "data": "2024-03-04", "pontos": 0, "pontos_origem": ""},
     ]
     stats = photo_stats(rows)
     assert stats.total_points == 6
-    assert stats.avg_points == 2.0
+    assert stats.avg_points == 1.5
     assert stats.exercise == 2
     assert stats.auto_points == 1
+    assert stats.without_points == 1
 
     details = {detail.sender: detail for detail in stats.senders}
     assert details["Ana"].points == 5
@@ -170,10 +173,11 @@ def test_points_metrics_and_per_sender() -> None:
 
 
 def test_points_of_tolerates_missing_values() -> None:
-    assert points_of({}) == 1
-    assert points_of({"pontos": None}) == 1
-    assert points_of({"pontos": ""}) == 1
-    assert points_of({"pontos": "0"}) == 1
+    assert points_of({}) == 0
+    assert points_of({"pontos": None}) == 0
+    assert points_of({"pontos": ""}) == 0
+    assert points_of({"pontos": "0"}) == 0
+    assert points_of({"pontos": -2}) == 0
     assert points_of({"pontos": 4}) == 4
 
 
@@ -208,6 +212,8 @@ SITUACOES: list[dict[str, Any]] = [
     {"id": 3, "remetente": "Bruno", "pontos": 1, "pontos_origem": "manual", "legenda": "bolo"},
     {"id": 4, "remetente": "Bruno", "pontos": 4, "pontos_origem": "manual", "legenda": "corrida"},
     {"id": 5, "remetente": "Bruno", "pontos": 1, "pontos_origem": "", "legenda": "café"},
+    {"id": 6, "remetente": "Bruno", "pontos": 0, "pontos_origem": "", "legenda": ""},
+    {"id": 7, "remetente": "Carla", "pontos": 0, "pontos_origem": "manual", "legenda": ""},
 ]
 
 
@@ -218,31 +224,38 @@ def test_score_situation_and_labels() -> None:
         "manual",
         "manual",
         "sem_sugestao",
+        "zero",
+        "zero",
     ]
     assert situation_label(SITUACOES[0]) == "Sugestão a revisar"
     assert situation_label(SITUACOES[1]) == "Sugestão confirmada"
     assert situation_label(SITUACOES[2]) == "Ajustada por você"
     assert situation_label(SITUACOES[3]) == "4 pontos (fora do padrão)"
-    assert situation_label(SITUACOES[4]) == "1 ponto (sem sugestão)"
+    assert situation_label(SITUACOES[4]) == "1 ponto (legenda sem exercício)"
+    assert situation_label(SITUACOES[5]) == "Sem pontuação (sem legenda)"
+    assert situation_label(SITUACOES[6]) == "Zerada por você"
 
 
 def test_audit_rows_by_situation_and_sender() -> None:
     assert [row["id"] for row in audit_rows(SITUACOES, "auto")] == [1]
-    assert [row["id"] for row in audit_rows(SITUACOES, "revisadas")] == [2, 3, 4]
+    assert [row["id"] for row in audit_rows(SITUACOES, "zero")] == [6, 7]
+    assert [row["id"] for row in audit_rows(SITUACOES, "revisadas")] == [2, 3, 4, 7]
     assert [row["id"] for row in audit_rows(SITUACOES, "alto")] == [4]
-    assert [row["id"] for row in audit_rows(SITUACOES, "todas")] == [1, 2, 3, 4, 5]
-    assert [row["id"] for row in audit_rows(SITUACOES, "todas", "Bruno")] == [3, 4, 5]
+    assert [row["id"] for row in audit_rows(SITUACOES, "todas")] == [1, 2, 3, 4, 5, 6, 7]
+    assert [row["id"] for row in audit_rows(SITUACOES, "todas", "Bruno")] == [3, 4, 5, 6]
+    assert [row["id"] for row in audit_rows(SITUACOES, "zero", "Bruno")] == [6]
     assert audit_rows(SITUACOES, "auto", "Bruno") == []
 
 
 def test_score_audit_totals() -> None:
     totals = score_audit(SITUACOES)
-    assert totals.photos == 5
+    assert totals.photos == 7
     assert totals.points == 10
     assert totals.suggestions == 1
     assert totals.confirmed == 1
-    assert totals.manual == 2
+    assert totals.manual == 3
     assert totals.over == 1
+    assert totals.without_points == 2
     assert score_audit([]).photos == 0
 
 
@@ -251,3 +264,5 @@ def test_score_reason_explains_each_situation() -> None:
     assert "treino" in score_reason(SITUACOES[1])
     assert score_reason(SITUACOES[2]) == "ajustada por você"
     assert score_reason(SITUACOES[4]) == ""
+    assert score_reason(SITUACOES[5]) == "sem legenda"
+    assert score_reason(SITUACOES[6]) == "zerada por você"

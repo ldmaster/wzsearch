@@ -1,8 +1,11 @@
-"""Score each photo record, guessing the exercise ones from the caption.
+"""Score each photo record, from the caption.
 
-Every record is worth at least one point; a photo whose caption (or likely
-context — the next message from the same sender) mentions an exercise is worth
-two. The decision is purely textual and offline: no model, no network.
+A photo only scores with a caption: with one it is worth one point, or two when
+the caption (or the likely context — the next message from the same sender)
+mentions an exercise. **Without a caption it stays at zero** — the audit lists
+those so a person can give them a point by hand if they want to.
+
+The decision is purely textual and offline: no model, no network.
 
 What the caption suggests is only a *suggestion*. Records the heuristic flagged
 keep ``pontos_origem == "auto"`` so the app can list them for review, and any
@@ -16,8 +19,14 @@ import re
 import unicodedata
 from collections.abc import Mapping, Sequence
 
-#: Smallest score a record can have.
-PONTOS_MIN = 1
+#: Score of a photo that came without a caption: no caption, no score.
+PONTOS_ZERO = 0
+
+#: Smallest score a record can be given (by the caption rule or by hand).
+PONTOS_MIN = 0
+
+#: Score of a photo with a caption that does not look like an exercise.
+PONTOS_PADRAO = 1
 
 #: Score of a photo the caption points at as an exercise.
 PONTOS_EXERCICIO = 2
@@ -124,10 +133,18 @@ def is_exercise(legenda: str, contexto_provavel: str) -> bool:
 
 
 def score_for(row: Mapping[str, object]) -> tuple[int, str]:
-    """Return the ``(pontos, origem)`` a record earns on import."""
-    if is_exercise(_text(row, "legenda"), _text(row, "contexto_provavel")):
+    """Return the ``(pontos, origem)`` a record earns from its caption.
+
+    No caption, no score: the photo stays at zero (the audit lists those for
+    someone to score by hand). With a caption it is worth one point, or two when
+    the caption or the next message from the same sender mentions an exercise.
+    """
+    legenda = _text(row, "legenda")
+    if not legenda.strip():
+        return PONTOS_ZERO, ORIGEM_VAZIA
+    if is_exercise(legenda, _text(row, "contexto_provavel")):
         return PONTOS_EXERCICIO, ORIGEM_AUTO
-    return PONTOS_MIN, ORIGEM_VAZIA
+    return PONTOS_PADRAO, ORIGEM_VAZIA
 
 
 def terms_for(row: Mapping[str, object]) -> tuple[str, ...]:

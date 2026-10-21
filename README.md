@@ -270,7 +270,8 @@ protótipos clicáveis em [`docs/ui-prototipos.html`](docs/ui-prototipos.html).
 
 ### Pontuação por foto
 
-Cada foto vale **no mínimo 1 ponto**, e vale **2 quando é foto de exercício**. O ajuste
+Cada foto pontua **pela legenda**: **1 ponto** quando tem legenda, **2 quando é foto de
+exercício** e **0 quando veio sem legenda** (nada para o app avaliar). O ajuste
 é no próprio registro, na coluna **Pontos** da lista:
 
 ```
@@ -281,14 +282,17 @@ Cada foto vale **no mínimo 1 ponto**, e vale **2 quando é foto de exercício**
 - Clique na **metade da esquerda** da célula (`−`) para tirar um ponto e na **metade da
   direita** (`+`) para somar. Também vale selecionar várias linhas e usar o menu
   **Pontos ▾** da barra de cima, ou as teclas `+` e `−`.
-- O mínimo é **1**: o `−` nunca deixa a foto abaixo disso. Não há máximo — a pontuação
-  também serve como peso, se você quiser dar 3 ou mais para uma foto.
+- O mínimo é **0** e não há máximo: o `−` leva a foto a zero e o `+` pode passar de 2, se
+  você quiser usar a pontuação como peso.
+- Foto **sem legenda** fica com **zero** — não há texto para avaliar. A auditoria tem o
+  filtro **Sem pontuação (sem legenda)** para você percorrer essas fotos e dar pontos às
+  que valem, com o motivo gravado junto.
 - Foto de exercício já entra valendo 2 sozinha: o app procura na **legenda** e na
   **mensagem seguinte da mesma pessoa** palavras como *treino, academia, corrida, bike,
   caminhada, natação, futebol, crossfit* (a lista fica em `src/wzsearch/score.py`, fácil
   de aumentar). Essa leitura é feita **offline**, sem modelo e sem rede.
 - A base que **já existia** é avaliada sozinha: ao abrir o app, as fotos que a legenda
-  marca viram 2 pontos sem nenhum clique (e as que ficam em 1 ponto continuam em 1).
+  marca viram 2 pontos e as sem legenda caem para zero, sem nenhum clique.
   Ao importar um export novo, a avaliação já acontece na entrada das fotos.
 - O que veio da legenda é uma **sugestão**: essas linhas ficam com a cor da pontuação na
   lista, o filtro **só sugestões automáticas** mostra só elas, e as Análises dizem quantas
@@ -315,10 +319,12 @@ Em **⚙ Ajustes → Auditoria de pontuação…** há uma janela só para confe
 é onde dá para confiar no que a legenda sugeriu:
 
 - O topo resume: `N foto(s) · X ponto(s) · Y sugestão(ões) a revisar · Z ajuste(s) seu(s)`,
-  mais quantas ficaram **fora do padrão** (3 pontos ou mais).
-- O filtro **Mostrar:** separa as situações — *Sugestões a revisar*, *Sugestões
-  confirmadas*, *Ajustadas por você*, *3+ pontos*, *Já decididas* e *Todas as fotos* — e
-  pode ser combinado com um remetente.
+  mais quantas estão **sem pontuação** e quantas ficaram **fora do padrão** (3 pontos ou
+  mais) — e o resumo segue o **remetente** escolhido logo abaixo.
+- O filtro **Mostrar:** separa as situações — *Sugestões a revisar*, *Sem pontuação (sem
+  legenda)*, *Sugestões confirmadas*, *Ajustadas por você*, *3+ pontos*, *Já decididas* e
+  *Todas as fotos*; o filtro **Remetente:** ao lado restringe a uma pessoa e pode ser
+  combinado com a situação.
 - A coluna **Sugerido por** diz qual palavra casou e onde ela apareceu (na legenda ou na
   mensagem seguinte da mesma pessoa) — sem a legenda, a própria coluna “Legenda” da
   tabela ajuda a bater o olho.
